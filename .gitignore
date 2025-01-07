@@ -1,13 +1,48 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# Dependencies
 node_modules/
+
+# Environment Variables and Secrets
+.env
+.env.*
+*.env
+.env.local
+.env.development
+.env.test
+.env.production
 
 # Expo
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+
+# Android specific
+android/local.properties
+android/key.properties
+android/*.keystore
+android/app/google-services.json
+android/app/debug.keystore
+android/app/debug backup.keystore
+
+
+# iOS specific
+ios/GoogleService-Info.plist
+ios/Pods/
+ios/*.xcconfig
+
+# Config files that might contain secrets
+config.js
+config.json
+*config.json
+*config.js
+secrets.*
+*secret*
+*apikey*
+*api-key*
+*credentials*
+src/services/firebase.js
+src/services/google-services.json
+src/services/GoogleService-Info.plist
 
 # Native
 *.orig.*
@@ -20,17 +55,21 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
-# debug
+# Debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+
+# Local development
+*.local
+local.*
 
 # macOS
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
