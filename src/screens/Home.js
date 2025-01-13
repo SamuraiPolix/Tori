@@ -11,7 +11,8 @@ import {
   Modal,
   TextInput,
   I18nManager,
-  StatusBar
+  StatusBar,
+  RefreshControl
 } from "react-native";
 import { Image } from "expo-image";
 import { FontFamily, Color } from "../styles/GlobalStyles";
@@ -56,12 +57,28 @@ const HomeScreen = ({ navigation }) => {
   const [searchText, setSearchText] = React.useState('');
   const [showFilters, setShowFilters] = React.useState(false);
   const [userName, setUserName] = React.useState('');
+  const [refreshing, setRefreshing] = React.useState(false);
   const [filters, setFilters] = React.useState({
     distance: 5,
     rating: 4,
     price: 2,
     availability: false,
   });
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    Promise.all([
+      // Add refs to your components that need refreshing
+      nearbySalonsRef.current?.fetchNearbySalons(),
+      salonsListRef.current?.fetchSalons(),
+    ]).finally(() => {
+      setRefreshing(false);
+    });
+  }, []);
+
+  // Create refs for components that need refreshing
+  const nearbySalonsRef = React.useRef();
+  const salonsListRef = React.useRef();
 
   React.useEffect(() => {
     const loadUserName = async () => {
@@ -120,14 +137,12 @@ const HomeScreen = ({ navigation }) => {
     navigation.navigate('CategoryDetails', { category });
   };
 
-  const handleSalonPress = (salon) => {
-    // מוצא את כל הנתונים של הסלון מתוך ה-SALONS
-    const fullSalonData = SALONS.find(s => s.id === salon.id) || salon;
-    navigation.navigate('SalonDetails', { salon: fullSalonData });
+  const handleBusinessPress = (business) => {
+    console.log('Navigating to business details with data:', business);
+    navigation.navigate('SalonDetails', { business });
   };
 
   const handleSearch = () => {
-    // כאן תהיה הלוגיקה של החיפוש
     console.log('Searching for:', searchText);
   };
 
@@ -136,7 +151,6 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const applyFilters = () => {
-    // כאן תהיה הלוגיקה של הפעלת הפילטרים
     console.log('Applying filters:', filters);
     setShowFilters(false);
   };
@@ -145,9 +159,8 @@ const HomeScreen = ({ navigation }) => {
     if (tabId !== activeTab) {
       setActiveTab(tabId);
       const screens = {
+        appointments: 'MyAppointments',
         saved: 'Saved',
-        map: 'Map',
-        messages: 'Messages',
         profile: 'Profile'
       };
       if (screens[tabId]) {
@@ -157,84 +170,91 @@ const HomeScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.mainContainer}>
-      <SafeAreaView style={styles.topSafeArea} />
-      <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.mainContainer}>
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Color.primaryColorAmaranthPurple]}
+            tintColor={Color.primaryColorAmaranthPurple}
+          />
+        }
+        contentContainerStyle={styles.scrollViewContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        nestedScrollEnabled={true}
+      >
         <View style={styles.container}>
-          <ScrollView 
-            style={styles.scrollView} 
-            contentContainerStyle={styles.scrollViewContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-            nestedScrollEnabled={true}
-          >
-            {/* Header Background */}
-            <View style={styles.headerBg}>
-              <View style={styles.welcomeContainer}>
-                <View style={styles.headerTopRow}>
-                  <TouchableOpacity 
-                    style={styles.backButton}
-                    onPress={() => navigation.navigate('Welcome')}
-                  >
-                    <Ionicons name="arrow-forward" size={24} color="white" />
-                  </TouchableOpacity>
-                  <View style={styles.greetingContainer}>
-                    <Text style={styles.welcomeText}>
-                      <Text style={styles.boldText}>היי {userName || 'אורח/ת'}</Text> 😊{'\n'}
-                      <Text style={styles.regularText}>איזה תור נקבע לך היום?</Text>
-                    </Text>
-                  </View>
+          {/* Header Background */}
+          <View style={styles.headerBg}>
+            <View style={styles.welcomeContainer}>
+              <View style={styles.headerTopRow}>
+                <TouchableOpacity 
+                  style={styles.backButton}
+                  onPress={() => navigation.navigate('Welcome')}
+                >
+                  <Ionicons name="arrow-forward" size={24} color="white" />
+                </TouchableOpacity>
+                <View style={styles.greetingContainer}>
+                  <Text style={styles.welcomeText}>
+                    <Text style={styles.boldText}>היי {userName || 'אורח/ת'}</Text> 😊{'\n'}
+                    <Text style={styles.regularText}>איזה תור נקבע לך היום?</Text>
+                  </Text>
                 </View>
               </View>
-
-              {/* Search Bar */}
-              <View style={styles.searchBarContainer}>
-                <SearchBar 
-                  onPress={() => navigation.navigate('Search')}
-                  onFilterPress={handleFilterPress}
-                />
-              </View>
             </View>
 
-            {/* Categories */}
-            <View style={styles.categoriesSection}>
-              <CategoriesList 
-                onCategoryPress={handleCategoryPress}
-                onSeeAllPress={() => navigation.navigate('Categories')}
+            {/* Search Bar */}
+            <View style={styles.searchBarContainer}>
+              <SearchBar 
+                onPress={() => navigation.navigate('Search')}
+                onFilterPress={handleFilterPress}
               />
             </View>
+          </View>
 
-            {/* Top Rated Salons */}
-            <SalonsList 
-              salons={SALONS}
-              onSalonPress={handleSalonPress}
-              onSeeAllPress={() => navigation.navigate('Salons')}
+          {/* Categories */}
+          <View style={styles.categoriesSection}>
+            <CategoriesList 
+              onCategoryPress={handleCategoryPress}
+              onSeeAllPress={() => navigation.navigate('Categories')}
             />
+          </View>
 
-            {/* Nearby Salons */}
-            <NearbySalonsList 
-              salons={NEARBY_SALONS}
-              onSalonPress={handleSalonPress}
-              onSeeAllPress={() => navigation.navigate('NearbySalons')}
-            />
-
-          </ScrollView>
-
-          <FilterModal
-            visible={showFilters}
-            onClose={() => setShowFilters(false)}
-            filters={filters}
-            setFilters={setFilters}
+          {/* Top Rated Salons */}
+          <SalonsList 
+            ref={salonsListRef}
+            salons={SALONS}
+            onSalonPress={handleBusinessPress} 
+            onSeeAllPress={() => navigation.navigate('Salons')}
           />
 
-          {/* Bottom Navigation */}
-          <BottomNavigation 
-            activeTab={activeTab}
-            onTabPress={handleTabPress}
+          {/* Nearby Salons */}
+          <NearbySalonsList 
+            ref={nearbySalonsRef}
+            salons={NEARBY_SALONS}
+            onSalonPress={handleBusinessPress}
+            onSeeAllPress={() => navigation.navigate('NearbySalons')}
           />
+
         </View>
-      </SafeAreaView>
-    </View>
+      </ScrollView>
+
+      <FilterModal
+        visible={showFilters}
+        onClose={() => setShowFilters(false)}
+        filters={filters}
+        setFilters={setFilters}
+      />
+
+      {/* Bottom Navigation */}
+      <BottomNavigation 
+        activeTab={activeTab}
+        onTabPress={handleTabPress}
+      />
+    </SafeAreaView>
   );
 };
 

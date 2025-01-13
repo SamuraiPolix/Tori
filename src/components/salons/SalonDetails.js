@@ -11,13 +11,21 @@ import {
   Pressable,
   Dimensions,
   Linking,
-  Platform
+  Platform,
+  Alert,
+  ActivityIndicator
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontFamily, Color, FontSize, Border, Padding } from "../../styles/GlobalStyles";
 import { useNavigation } from '@react-navigation/native';
-import { SALONS } from './salonsData';
 import { Ionicons } from '@expo/vector-icons';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import { 
+  findAvailableSlots, 
+  bookAppointment, 
+  initializeBusinessSlots 
+} from '../../utils/appointmentUtils';
 
 // Enable RTL
 I18nManager.allowRTL(true);
@@ -32,44 +40,446 @@ const TABS = [
 
 const SalonDetails = ({ route }) => {
   const navigation = useNavigation();
-  const { salon } = route?.params || {};
-  const salonData = salon || SALONS.find(s => s.id === 1); // ברירת מחדל לסלון הראשון אם לא נשלח סלון
-  const scrollViewRef = React.useRef(null);
-  const [datePosition, setDatePosition] = React.useState(0);
-  const [timePosition, setTimePosition] = React.useState(0);
-  const [selectedImage, setSelectedImage] = React.useState(null);
-
-  const [activeTab, setActiveTab] = React.useState('about');
-  const [selectedService, setSelectedService] = React.useState(null);
   const [selectedDate, setSelectedDate] = React.useState(null);
   const [selectedTime, setSelectedTime] = React.useState(null);
+  const [availableSlots, setAvailableSlots] = React.useState([]);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [selectedImage, setSelectedImage] = React.useState(null);
+  const [activeTab, setActiveTab] = React.useState(route.params?.initialTab || 'about');
+  const [selectedService, setSelectedService] = React.useState(null);
   const [showConfirmModal, setShowConfirmModal] = React.useState(false);
 
-  const handleServiceSelect = (service) => {
-    // אם השירות כבר נבחר, נבטל את הבחירה
-    if (selectedService?.id === service.id) {
-      setSelectedService(null);
-      setSelectedDate(null);
-      setSelectedTime(null);
-    } else {
-      setSelectedService(service);
+  // Ensure we have valid business data
+  if (!route?.params?.business) {
+    console.error('No business data provided');
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>מידע על העסק אינו זמין</Text>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.backButtonText}>חזור</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const businessData = route.params.business;
+  const businessId = businessData.id;
+  console.log(`Loading business: ${businessId}`);
+
+  // Initialize default values for optional fields
+  const defaultBusinessData = {
+    name: businessData.name || 'שם העסק לא זמין',
+    about: businessData.about || 'אין תיאור זמין',
+    rating: businessData.rating || 0,
+    reviewsCount: businessData.reviewsCount || 0,
+    address: businessData.address || 'כתובת לא זמינה',
+    businessPhone: businessData.businessPhone || '',
+    email: businessData.email || '',
+    images: businessData.images || [],
+    services: businessData.services || [],
+    workingHours: businessData.workingHours || {
+      sunday: { close: '', isOpen: false, open: '' },
+      monday: { close: '', isOpen: false, open: '' },
+      tuesday: { close: '', isOpen: false, open: '' },
+      wednesday: { close: '', isOpen: false, open: '' },
+      thursday: { close: '', isOpen: false, open: '' },
+      friday: { close: '', isOpen: false, open: '' },
+      saturday: { close: '', isOpen: false, open: '' }
+    },
+    scheduleSettings: businessData.scheduleSettings || {
+      allowCancellation: false,
+      allowSameDayBooking: false,
+      autoApprove: false,
+      cancellationTimeLimit: 0,
+      maxFutureBookingDays: 30,
+      minTimeBeforeBooking: 0,
+      slotDuration: 30
+    },
+    settings: businessData.settings || {
+      allowOnlineBooking: false,
+      autoConfirm: false,
+      notificationsEnabled: false,
+      reminderTime: 60
     }
   };
 
-  const formatDate = (dateStr) => {
-    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    const date = new Date(dateStr);
-    const dayName = days[date.getDay()];
-    return `יום ${dayName}, ${dateStr}`;
+  const formatWorkingHours = (workingHours) => {
+    if (!workingHours) return {};
+    
+    const daysMap = {
+      sunday: 'ראשון',
+      monday: 'שני',
+      tuesday: 'שלישי',
+      wednesday: 'רביעי',
+      thursday: 'חמישי',
+      friday: 'שישי',
+      saturday: 'שבת'
+    };
+
+    return Object.entries(workingHours).map(([day, hours]) => ({
+      day: daysMap[day],
+      hours: !hours.isOpen ? 'סגור' : 
+             (hours.open === '00:00' && hours.close === '00:00') ? '24 שעות' :
+             `${hours.open} - ${hours.close}`
+    }));
   };
 
-  const handleDateSelect = (date) => {
-    setSelectedDate(date);
+  const scrollViewRef = React.useRef(null);
+  const [datePosition, setDatePosition] = React.useState(0);
+  const [timePosition, setTimePosition] = React.useState(0);
+
+  // Helper function to format dates
+  const formatDate = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    return d.toISOString().split('T')[0];
+  };
+
+  const fetchAvailableSlots = async (date) => {
+    if (!businessId || !date) return [];
+    
+    try {
+      setIsLoading(true);
+      const dateStr = formatDate(date);
+      
+      // Get the available slot IDs for the selected date
+      const availableSlotsDoc = await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .collection('availableSlots')
+        .doc(dateStr)
+        .get();
+
+      if (!availableSlotsDoc.exists || !availableSlotsDoc.data()?.slots) {
+        return [];
+      }
+
+      const slotIds = availableSlotsDoc.data().slots;
+      
+      // Get the actual appointment details from the appointments collection
+      const appointmentsPromises = slotIds.map(id => 
+        firestore()
+          .collection('appointments')
+          .doc(id)
+          .get()
+      );
+
+      const appointmentDocs = await Promise.all(appointmentsPromises);
+      
+      // Filter out any invalid appointments and map to time slots
+      const slots = appointmentDocs
+        .filter(doc => doc.exists && doc.data().status === 'available')
+        .map(doc => {
+          const data = doc.data();
+          const startTime = data.startTime.toDate();
+          return {
+            id: doc.id,
+            time: startTime,
+            formattedTime: startTime.toLocaleTimeString('he-IL', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            })
+          };
+        })
+        .sort((a, b) => a.time - b.time);
+
+      return slots;
+    } catch (error) {
+      console.error('Error fetching available slots:', error);
+      Alert.alert('שגיאה', 'לא ניתן לטעון את התורים הזמינים');
+      return [];
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const findAvailableAppointments = async (businessId, selectedDate, serviceOverride = null) => {
+    try {
+      const serviceToUse = serviceOverride || selectedService;
+      
+      if (!serviceToUse) {
+        return { available: [], booked: [], error: 'Please select a service first' };
+      }
+
+      const serviceDuration = serviceToUse.duration || 30;
+      console.log(`Finding slots for business ${businessId}, service duration: ${serviceDuration}min`);
+
+      // Query all appointments for the business on the selected date
+      const startOfDay = new Date(selectedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(selectedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // If it's today, use current time as start time
+      const now = new Date();
+      const isToday = startOfDay.toDateString() === now.toDateString();
+      const queryStartTime = isToday ? now : startOfDay;
+
+      const appointmentsSnapshot = await firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('startTime', '>=', firestore.Timestamp.fromDate(queryStartTime))
+        .where('startTime', '<=', firestore.Timestamp.fromDate(endOfDay))
+        .get();
+
+      // Get all booked time slots with their durations from the business services
+      const bookedSlots = await Promise.all(appointmentsSnapshot.docs.map(async doc => {
+        const data = doc.data();
+        
+        // Get the service duration from the business services
+        const businessDoc = await firestore()
+          .collection('businesses')
+          .doc(businessId)
+          .get();
+        
+        const businessServices = businessDoc.data()?.services || [];
+        const appointmentService = businessServices.find(s => s.id === data.serviceId);
+        const appointmentDuration = appointmentService?.duration || 30; // Default to 30 minutes if service not found
+        
+        return {
+          id: doc.id,
+          startTime: data.startTime,
+          duration: appointmentDuration
+        };
+      }));
+
+      // Get business working hours for the day
+      const dayOfWeek = startOfDay.getDay();
+      const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const workingHours = businessData.workingHours[daysMap[dayOfWeek]];
+
+      if (!workingHours.isOpen) {
+        return { available: [], booked: bookedSlots, error: 'Business is closed on this day' };
+      }
+
+      // Generate all possible slots based on working hours
+      const slots = [];
+      const slotDuration = businessData.scheduleSettings?.slotDuration || 30; // Default 30 minutes
+      
+      const [openHour, openMinute] = workingHours.open.split(':');
+      const [closeHour, closeMinute] = workingHours.close.split(':');
+      
+      // Set initial slot time based on whether it's today or not
+      let currentSlot;
+      if (isToday) {
+        currentSlot = new Date(now);
+        // Round up to the next slot
+        const minutes = currentSlot.getMinutes();
+        const roundedMinutes = Math.ceil(minutes / slotDuration) * slotDuration;
+        currentSlot.setMinutes(roundedMinutes, 0, 0);
+      } else {
+        currentSlot = new Date(startOfDay);
+        currentSlot.setHours(parseInt(openHour), parseInt(openMinute), 0, 0);
+      }
+      
+      const closeTime = new Date(startOfDay);
+      closeTime.setHours(parseInt(closeHour), parseInt(closeMinute), 0, 0);
+
+      // If today and current time is past closing time, return no slots
+      if (isToday && currentSlot >= closeTime) {
+        return { available: [], booked: bookedSlots, error: 'No more available slots today' };
+      }
+
+      while (currentSlot < closeTime) {
+        const slotTime = firestore.Timestamp.fromDate(currentSlot);
+        
+        // Check if this slot conflicts with any booked appointment
+        const isSlotAvailable = !bookedSlots.some(booking => {
+          // Convert booking time to minutes since start of day
+          const bookingDate = booking.startTime.toDate();
+          const bookingMinutes = bookingDate.getHours() * 60 + bookingDate.getMinutes();
+          
+          // Convert current slot to minutes since start of day
+          const slotMinutes = currentSlot.getHours() * 60 + currentSlot.getMinutes();
+          
+          // Check if there's any overlap between the service duration and the booked slot
+          const serviceEndMinutes = slotMinutes + serviceDuration;
+          const bookingEndMinutes = bookingMinutes + booking.duration;
+          
+          return (
+            (slotMinutes >= bookingMinutes && slotMinutes < bookingEndMinutes) || // Start of service overlaps with booking
+            (serviceEndMinutes > bookingMinutes && serviceEndMinutes <= bookingEndMinutes) || // End of service overlaps with booking
+            (slotMinutes <= bookingMinutes && serviceEndMinutes >= bookingEndMinutes) // Service completely encompasses booking
+          );
+        });
+
+        // Also check if the service can be completed before closing time
+        const serviceEndTime = new Date(currentSlot.getTime() + serviceDuration * 60000);
+        const canCompleteService = serviceEndTime <= closeTime;
+
+        if (isSlotAvailable && canCompleteService) {
+          const slotDate = currentSlot;
+          // Add offset to compensate for timezone
+          const hours = slotDate.getHours().toString().padStart(2, '0');
+          const minutes = slotDate.getMinutes().toString().padStart(2, '0');
+          slots.push({
+            time: slotTime,
+            formattedTime: `${hours}:${minutes}`,
+            available: true,
+            duration: serviceDuration
+          });
+        }
+
+        currentSlot = new Date(currentSlot.getTime() + slotDuration * 60000);
+      }
+
+      return { available: slots, booked: bookedSlots, error: null };
+    } catch (error) {
+      console.error('Error finding available appointments:', error);
+      return { available: [], booked: [], error: error.message };
+    }
+  };
+
+  const handleDateSelect = async (date) => {
+    try {
+      setSelectedDate(date);
+      setSelectedTime(null);
+      setIsLoading(true);
+      
+      const result = await findAvailableAppointments(businessId, date);
+      if (result.error) {
+        Alert.alert('שגיאה', result.error);
+        return;
+      }
+      
+      setAvailableSlots(result.available);
+    } catch (error) {
+      console.error('Error in handleDateSelect:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בטעינת המועדים הזמינים');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleServiceSelect = async (service) => {
+    setSelectedService(service);
     setSelectedTime(null);
+    
+    // If a date was already selected, refresh the available slots for the new service
+    if (selectedDate) {
+      setIsLoading(true);
+      try {
+        const result = await findAvailableAppointments(businessId, selectedDate, service);
+        if (result.error) {
+          Alert.alert('שגיאה', result.error);
+          return;
+        }
+        setAvailableSlots(result.available);
+      } catch (error) {
+        console.error('Error refreshing available slots:', error);
+        Alert.alert('שגיאה', 'אירעה שגיאה בטעינת המועדים הזמינים');
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
-  const handleTimeSelect = (time) => {
-    setSelectedTime(time);
+  const handleTimeSelect = (slot) => {
+    setSelectedTime(slot);
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!selectedService || !selectedTime || !selectedDate) {
+      Alert.alert('שגיאה', 'נא לבחור שירות, תאריך ושעה');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const user = auth().currentUser;
+      
+      if (!user) {
+        Alert.alert('שגיאה', 'יש להתחבר כדי לקבוע תור');
+        return;
+      }
+
+      // Find the matching service from the business data
+      const businessService = businessData.services.find(
+        service => service.name === selectedService.name
+      );
+
+      if (!businessService) {
+        Alert.alert('שגיאה', 'השירות שנבחר אינו קיים יותר');
+        return;
+      }
+
+      // First check if the slot is still available
+      const slotTime = selectedTime.time;
+      const serviceDuration = selectedService.duration || 30;
+      
+      // Check for overlapping appointments outside the transaction
+      const endTime = new Date(slotTime.toDate().getTime() + serviceDuration * 60000);
+      const overlappingAppointments = await firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('startTime', '>=', slotTime)
+        .where('startTime', '<', firestore.Timestamp.fromDate(endTime))
+        .where('status', 'in', ['pending', 'confirmed'])
+        .get();
+
+      if (!overlappingAppointments.empty) {
+        Alert.alert('שגיאה', 'התור כבר נתפס על ידי לקוח אחר, נא לבחור מועד אחר');
+        // Refresh available slots
+        const result = await findAvailableAppointments(businessId, selectedDate, selectedService);
+        setAvailableSlots(result.available);
+        return;
+      }
+
+      // If no overlapping appointments, proceed with creating the appointment using a transaction
+      await firestore().runTransaction(async (transaction) => {
+        const appointmentRef = firestore().collection('appointments').doc();
+        const appointmentId = appointmentRef.id;
+
+        // Create the appointment within the transaction
+        transaction.set(appointmentRef, {
+          id: appointmentId,
+          businessId: businessId,
+          customerId: user.uid,
+          serviceId: businessService.id,
+          serviceName: businessService.name,
+          startTime: selectedTime.time,
+          duration: serviceDuration,
+          price: businessService.price || 0,
+          status: 'pending',
+          notes: null,
+          createdAt: firestore.Timestamp.now(),
+          updatedAt: firestore.Timestamp.now()
+        });
+
+        // Add to user's appointments within the same transaction
+        const userAppointmentRef = firestore()
+          .collection('users')
+          .doc(user.uid)
+          .collection('appointments')
+          .doc(appointmentId);
+
+        transaction.set(userAppointmentRef, {
+          appointmentId: appointmentId,
+          businessId: businessId,
+          serviceName: businessService.name,
+          serviceId: businessService.id,
+          startTime: selectedTime.time,
+          duration: serviceDuration,
+          price: businessService.price || 0,
+          status: 'pending',
+          createdAt: firestore.Timestamp.now()
+        });
+      });
+
+      setShowConfirmModal(false);
+      Alert.alert('הצלחה', 'התור נקבע בהצלחה');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error creating appointment:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בקביעת התור');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBookPress = () => {
@@ -100,83 +510,56 @@ const SalonDetails = ({ route }) => {
     }, 100);
   };
 
-  const handleConfirmBooking = () => {
-    // Here you would send the booking to your backend
-    setShowConfirmModal(false);
-    alert('התור נקבע בהצלחה!');
-    // Reset selections after successful booking
-    setSelectedService(null);
-    setSelectedDate(null);
-    setSelectedTime(null);
-    setActiveTab('about');
-  };
-
   const handleNavigate = () => {
-    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
-    const latLng = `${salonData.latitude},${salonData.longitude}`;
-    const label = salonData.name;
+    const address = businessData.address;
+    const businessName = businessData.name;
+    const searchQuery = encodeURIComponent(`${address}, ${businessName}`);
+    
     const url = Platform.select({
-      ios: `${scheme}${label}@${latLng}`,
-      android: `${scheme}${latLng}(${label})`
+      ios: `maps://?q=${searchQuery}`,
+      android: `geo:0,0?q=${searchQuery}`
     });
 
     Linking.openURL(url);
   };
 
   const handleCall = () => {
-    Linking.openURL(`tel:${salonData.phone}`);
+    Linking.openURL(`tel:${businessData.businessPhone}`);
   };
 
   const renderConfirmModal = () => {
-    if (!selectedService || !selectedDate || !selectedTime) return null;
+    if (!selectedService || !selectedTime || !selectedDate) return null;
+
+    const formattedDate = new Date(selectedDate).toLocaleDateString('he-IL');
+    const formattedTime = selectedTime.formattedTime;
 
     return (
       <Modal
-        animationType="slide"
-        transparent={true}
         visible={showConfirmModal}
+        transparent={true}
         onRequestClose={() => setShowConfirmModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>אישור הזמנה</Text>
-            <Text style={styles.salonName}>{salonData.name}</Text>
-            
-            <View style={styles.summaryContainer}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryValue}>{selectedService.name}</Text>
-                <Text style={styles.summaryLabel}>שירות:</Text>
-              </View>
-              
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryValue}>{formatDate(selectedDate)}</Text>
-                <Text style={styles.summaryLabel}>תאריך:</Text>
-              </View>
-              
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryValue}>{selectedTime}</Text>
-                <Text style={styles.summaryLabel}>שעה:</Text>
-              </View>
-              
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryValue}>₪{selectedService.price}</Text>
-                <Text style={styles.summaryLabel}>מחיר:</Text>
-              </View>
+            <Text style={styles.modalTitle}>אישור תור</Text>
+            <View style={styles.modalDetails}>
+              <Text style={styles.modalText}>שירות: {selectedService.name}</Text>
+              <Text style={styles.modalText}>תאריך: {formattedDate}</Text>
+              <Text style={styles.modalText}>שעה: {formattedTime}</Text>
+              <Text style={styles.modalText}>מחיר: ₪{selectedService.price}</Text>
             </View>
-
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowConfirmModal(false)}
-              >
-                <Text style={[styles.modalButtonText, styles.cancelButtonText]}>ביטול</Text>
-              </TouchableOpacity>
-              
               <TouchableOpacity
                 style={[styles.modalButton, styles.confirmButton]}
                 onPress={handleConfirmBooking}
               >
-                <Text style={styles.modalButtonText}>אישור</Text>
+                <Text style={styles.confirmButtonText}>אישור</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -211,35 +594,48 @@ const SalonDetails = ({ route }) => {
   };
 
   const renderDateSelector = () => {
-    if (!selectedService) return null;
+    const dates = [];
+    const today = new Date();
+    
+    // Generate next 30 days
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date.toISOString().split('T')[0]);
+    }
 
     return (
-      <View>
-        <Text style={styles.dateTitle}>בחר תאריך:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.datesScroll}>
-          {Object.keys(salonData.availableSlots).map((date) => {
-            const dateObj = new Date(date);
-            const dayName = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'][dateObj.getDay()];
-            const dayNumber = dateObj.getDate();
+      <View style={styles.dateSection}>
+        <Text style={styles.sectionTitle}>בחר תאריך:</Text>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.datesContainer}
+          ref={scrollViewRef}
+        >
+          {dates.map((date) => {
+            const isSelected = selectedDate === date;
+            const dayName = formatDayName(new Date(date).getDay());
+            const dayNumber = new Date(date).getDate();
             
             return (
               <TouchableOpacity
                 key={date}
                 style={[
-                  styles.dateCard,
-                  selectedDate === date && styles.selectedDateCard
+                  styles.dateButton,
+                  isSelected && styles.selectedDateButton
                 ]}
                 onPress={() => handleDateSelect(date)}
               >
                 <Text style={[
                   styles.dayName,
-                  selectedDate === date && styles.selectedDateText
+                  isSelected && styles.selectedDateText
                 ]}>
                   {dayName}
                 </Text>
                 <Text style={[
                   styles.dayNumber,
-                  selectedDate === date && styles.selectedDateText
+                  isSelected && styles.selectedDateText
                 ]}>
                   {dayNumber}
                 </Text>
@@ -251,37 +647,53 @@ const SalonDetails = ({ route }) => {
     );
   };
 
-  const renderTimeSlots = () => {
-    if (!selectedDate || !salonData.availableSlots[selectedDate]) return null;
+  const renderTimeSelector = () => {
+    if (!selectedDate) return null;
 
     return (
-      <View>
-        <Text style={styles.timeTitle}>בחר שעה:</Text>
-        <View style={styles.timeGrid}>
-          {salonData.availableSlots[selectedDate].map((time) => (
-            <TouchableOpacity
-              key={time}
-              style={[
-                styles.timeSlot,
-                selectedTime === time && styles.selectedTimeSlot
-              ]}
-              onPress={() => handleTimeSelect(time)}
-            >
-              <Text style={[
-                styles.timeSlotText,
-                selectedTime === time && styles.selectedTimeSlotText
-              ]}>
-                {time}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      <View style={styles.timeSelectorContainer}>
+        <Text style={styles.sectionTitle}>בחר שעה:</Text>
+        {isLoading ? (
+          <ActivityIndicator size="large" color={Color.primaryColorAmaranthPurple} />
+        ) : availableSlots.length > 0 ? (
+          <View style={styles.timeSlotsGrid}>
+            {availableSlots.map((slot) => {
+              const isSelected = selectedTime?.time?.seconds === slot.time.seconds;
+              return (
+                <TouchableOpacity
+                  key={`${slot.time.seconds}-${slot.time.nanoseconds}`}
+                  style={[
+                    styles.timeButton,
+                    isSelected && styles.selectedTimeButton
+                  ]}
+                  onPress={() => setSelectedTime(slot)}
+                >
+                  <Text
+                    style={[
+                      styles.timeButtonText,
+                      isSelected && styles.selectedTimeButtonText
+                    ]}
+                  >
+                    {slot.formattedTime}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          <Text style={styles.noSlotsText}>אין תורים זמינים בתאריך זה</Text>
+        )}
       </View>
     );
   };
 
+  const formatDayName = (dayIndex) => {
+    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[dayIndex];
+  };
+
   const renderGallery = () => {
-    if (!salonData.gallery || salonData.gallery.length === 0) {
+    if (!businessData.images || businessData.images.length === 0) {
       return (
         <View style={styles.emptyGallery}>
           <Text style={styles.emptyText}>אין תמונות בגלריה</Text>
@@ -295,9 +707,9 @@ const SalonDetails = ({ route }) => {
     return (
       <View style={styles.galleryContainer}>
         <View style={styles.galleryGrid}>
-          {salonData.gallery.map((item, index) => (
+          {businessData.images.map((item, index) => (
             <TouchableOpacity 
-              key={index}
+              key={`gallery-image-${index}-${typeof item === 'string' ? item : item.uri}`}
               style={[styles.galleryImageContainer, { width: imageSize, height: imageSize }]}
               onPress={() => setSelectedImage(item)}
             >
@@ -343,13 +755,13 @@ const SalonDetails = ({ route }) => {
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const now = new Date();
     const currentDay = days[now.getDay()];
-    const currentHours = salonData.openingHours[currentDay];
+    const currentHours = businessData.workingHours[currentDay];
     
     if (currentHours.open === 'closed') return false;
     
     const currentTime = now.getHours() * 60 + now.getMinutes();
-    const [openHour, openMinute] = currentHours.open.split(':').map(Number);
-    const [closeHour, closeMinute] = currentHours.close.split(':').map(Number);
+    const [openHour, openMinute] = currentHours.open.split(':');
+    const [closeHour, closeMinute] = currentHours.close.split(':');
     
     const openTime = openHour * 60 + openMinute;
     const closeTime = closeHour * 60 + closeMinute;
@@ -371,26 +783,17 @@ const SalonDetails = ({ route }) => {
           <Text style={styles.sectionTitle}>שעות פעילות</Text>
         </View>
         <View style={styles.businessHoursList}>
-          {Object.entries(salonData.openingHours).map(([day, hours]) => {
-            const hebrewDays = {
-              sunday: 'ראשון',
-              monday: 'שני',
-              tuesday: 'שלישי',
-              wednesday: 'רביעי',
-              thursday: 'חמישי',
-              friday: 'שישי',
-              saturday: 'שבת'
-            };
-            
-            return (
-              <View key={day} style={styles.businessHoursRow}>
-                <Text style={styles.hoursText}>
-                  {hours.open === 'closed' ? 'סגור' : `${hours.open} - ${hours.close}`}
-                </Text>
-                <Text style={styles.dayText}>{hebrewDays[day]}</Text>
-              </View>
-            );
-          })}
+          {formatWorkingHours(businessData.workingHours).map((item) => (
+            <View 
+              key={`business-hours-${item.day}`} 
+              style={styles.businessHoursRow}
+            >
+              <Text style={styles.hoursText}>
+                {item.hours}
+              </Text>
+              <Text style={styles.dayText}>{item.day}</Text>
+            </View>
+          ))}
         </View>
       </View>
     );
@@ -401,7 +804,7 @@ const SalonDetails = ({ route }) => {
       <View style={styles.aboutContainer}>
         <View style={styles.descriptionContainer}>
           <Text style={styles.sectionTitle}>תיאור</Text>
-          <Text style={styles.description}>{salonData.description}</Text>
+          <Text style={styles.description}>{businessData.about}</Text>
         </View>
 
         <View style={styles.actionButtons}>
@@ -429,7 +832,7 @@ const SalonDetails = ({ route }) => {
         return (
           <View style={styles.servicesContainer}>
             <Text style={styles.sectionTitle}>בחר שירות:</Text>
-            {salonData.services.map((service) => (
+            {businessData.services.map((service) => (
               <TouchableOpacity
                 key={service.id}
                 style={[
@@ -473,7 +876,7 @@ const SalonDetails = ({ route }) => {
                 setTimePosition(y);
               }}
             >
-              {renderTimeSlots()}
+              {renderTimeSelector()}
             </View>
           </View>
         );
@@ -496,18 +899,35 @@ const SalonDetails = ({ route }) => {
     }
   };
 
+  const renderHeader = () => {
+    return (
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color={Color.textColorPrimary} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView 
-        ref={scrollViewRef} 
-        style={styles.scrollView}
-      >
+      <ScrollView ref={scrollViewRef}>
+        {renderHeader()}
         <View style={styles.headerSection}>
-          <Image
-            style={styles.coverImage}
-            contentFit="cover"
-            source={salonData.image}
-          />
+          {businessData.images[0] ? (
+            <Image
+              style={styles.coverImage}
+              contentFit="cover"
+              source={businessData.images[0]}
+            />
+          ) : (
+            <View style={[styles.coverImage, styles.placeholderImage]}>
+              <Text style={styles.placeholderText}>אין תמונה זמינה</Text>
+            </View>
+          )}
           <LinearGradient
             style={styles.gradient}
             locations={[0, 0.7, 1]}
@@ -518,23 +938,16 @@ const SalonDetails = ({ route }) => {
             ]}
           />
           
-          <TouchableOpacity 
-            onPress={() => navigation.goBack()} 
-            style={styles.backButton}
-          >
-            <Ionicons name="chevron-forward" size={24} color="#000000" />
-          </TouchableOpacity>
-
           <View style={styles.headerContent}>
-            <Text style={styles.title}>{salonData.name}</Text>
-            <Text style={styles.subtitle}>{salonData.description}</Text>
+            <Text style={styles.title}>{businessData.name}</Text>
+            <Text style={styles.subtitle}>{businessData.about}</Text>
             
             <View style={styles.infoContainer}>
               <View style={styles.infoRow}>
-                <Text style={styles.infoText}>⭐ {salonData.rating}</Text>
-                <Text style={styles.reviewCount}>({salonData.reviewsCount} ביקורות)</Text>
+                <Text style={styles.infoText}>⭐ {businessData.rating}</Text>
+                <Text style={styles.reviewCount}>({businessData.reviewsCount} ביקורות)</Text>
               </View>
-              <Text style={styles.infoText}>{salonData.address}</Text>
+              <Text style={styles.infoText}>{businessData.address}</Text>
             </View>
           </View>
         </View>
@@ -574,10 +987,17 @@ const SalonDetails = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: Color.backgroundColorPrimary,
   },
-  scrollView: {
-    flex: 1,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: Color.backgroundColorPrimary,
+  },
+  backButton: {
+    padding: 8,
   },
   headerSection: {
     height: 300,
@@ -593,26 +1013,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 40,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
   },
   headerContent: {
     position: 'absolute',
@@ -866,9 +1266,9 @@ const styles = StyleSheet.create({
   selectedDateText: {
     color: '#007AFF',
   },
-  timeSlotsContainer: {
+  timeSelectorContainer: {
     marginTop: 20,
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
   },
   timeTitle: {
     fontSize: 18,
@@ -877,34 +1277,42 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: Color.black,
   },
-  timeGrid: {
+  timeSlotsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
-    gap: 10,
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 8,
   },
-  timeSlot: {
+  timeButton: {
+    backgroundColor: '#f5f5f5',
     paddingVertical: 10,
     paddingHorizontal: 15,
-    backgroundColor: '#f5f5f5',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
     minWidth: 80,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-    marginBottom: 8,
-    marginLeft: 8,
   },
-  selectedTimeSlot: {
-    backgroundColor: '#e6f3ff',
-    borderColor: '#007AFF',
+  selectedTimeButton: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    borderColor: Color.primaryColorAmaranthPurple,
   },
-  timeSlotText: {
+  timeButtonText: {
     fontSize: 16,
-    color: '#000000',
+    color: Color.textColorPrimary,
+    fontFamily: FontFamily.assistant,
   },
-  selectedTimeSlotText: {
-    color: '#007AFF',
+  selectedTimeButtonText: {
+    color: Color.grayscaleColorWhite,
+  },
+  noSlotsText: {
+    fontFamily: FontFamily.assistant,
+    fontSize: 16,
+    color: Color.textColorSecondary,
+    textAlign: 'center',
+    marginTop: 12,
   },
   stickyButton: {
     position: 'absolute',
@@ -1001,13 +1409,16 @@ const styles = StyleSheet.create({
     borderColor: '#007AFF',
   },
   modalButtonText: {
-    color: '#fff',
+    color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   cancelButtonText: {
     color: '#007AFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   businessHoursContainer: {
     marginTop: 20,
@@ -1100,6 +1511,81 @@ const styles = StyleSheet.create({
     color: Color.primaryColorAmaranthPurple,
     fontSize: 16,
     fontFamily: FontFamily.assistantSemiBold,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontFamily: FontFamily.assistant,
+    fontSize: 18,
+    color: Color.grayscaleColorGray,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  backButton: {
+    padding: 10,
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    borderRadius: 8,
+  },
+  backButtonText: {
+    fontFamily: FontFamily.assistant,
+    color: Color.grayscaleColorWhite,
+    fontSize: 16,
+  },
+  placeholderImage: {
+    backgroundColor: Color.grayscaleColorLightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    fontFamily: FontFamily.assistant,
+    color: Color.grayscaleColorGray,
+    fontSize: 16,
+  },
+  dateSection: {
+    marginTop: 20,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontFamily: FontFamily.assistant,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: Color.textColorPrimary,
+  },
+  datesContainer: {
+    paddingVertical: 8,
+  },
+  dateButton: {
+    width: 65,
+    height: 75,
+    borderRadius: 12,
+    backgroundColor: Color.grayscaleColorGray50,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  selectedDateButton: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+  },
+  dayName: {
+    fontFamily: FontFamily.assistant,
+    fontSize: 14,
+    color: Color.textColorSecondary,
+    marginBottom: 4,
+  },
+  dayNumber: {
+    fontFamily: FontFamily.assistant,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Color.textColorPrimary,
+  },
+  selectedDateText: {
+    color: Color.grayscaleColorWhite,
   },
 });
 

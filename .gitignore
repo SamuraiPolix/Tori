@@ -73,3 +73,5 @@ local.*
 .vscode/
 *.swp
 *.swo
+android/app/src/main/AndroidManifest.xml
+app.json

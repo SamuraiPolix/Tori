@@ -1,22 +1,104 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  ScrollView, 
+  TextInput, 
+  Switch,
+  Alert,
+  ActivityIndicator
+} from 'react-native';
 import { FontFamily } from '../../styles/GlobalStyles';
+import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 
 export default function BusinessSettings({ navigation }) {
-  const [businessData, setBusinessData] = useState({
-    name: 'העסק שלי',
-    phone: '054-1234567',
-    email: 'business@example.com',
-    address: 'רחוב הרצל 1, תל אביב',
-    workHours: '9:00-18:00',
-    notificationsEnabled: true,
-    autoConfirm: false,
-  });
+  const [businessData, setBusinessData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    // TODO: Save business settings
-    navigation.goBack();
+  useEffect(() => {
+    loadBusinessData();
+  }, []);
+
+  const loadBusinessData = async () => {
+    try {
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .get();
+
+      if (businessDoc.exists) {
+        const data = businessDoc.data();
+        setBusinessData({
+          name: data.name || '',
+          phone: data.businessPhone || '',
+          email: data.email || '',
+          address: data.address || '',
+          workHours: data.workingHours || '9:00-18:00',
+          notificationsEnabled: data.settings?.notificationsEnabled ?? true,
+          autoConfirm: data.settings?.autoConfirm ?? false,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading business data:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בטעינת נתוני העסק');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSave = async () => {
+    if (!businessData) return;
+
+    setSaving(true);
+    try {
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          name: businessData.name,
+          businessPhone: businessData.phone,
+          email: businessData.email,
+          address: businessData.address,
+          workingHours: businessData.workHours,
+          settings: {
+            notificationsEnabled: businessData.notificationsEnabled,
+            autoConfirm: businessData.autoConfirm
+          },
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      Alert.alert('הצלחה', 'ההגדרות נשמרו בהצלחה');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error saving business settings:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת ההגדרות');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await auth().signOut();
+      navigation.navigate('Welcome');
+    } catch (error) {
+      console.error('Error signing out:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בהתנתקות');
+    }
+  };
+
+  if (loading || !businessData) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2196F3" />
+        <Text style={styles.loadingText}>טוען נתונים...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -83,6 +165,26 @@ export default function BusinessSettings({ navigation }) {
               textAlign="right"
             />
           </View>
+
+          <View style={styles.switchContainer}>
+            <Text style={styles.label}>🔔 התראות</Text>
+            <Switch
+              value={businessData.notificationsEnabled}
+              onValueChange={(value) => 
+                setBusinessData({ ...businessData, notificationsEnabled: value })
+              }
+            />
+          </View>
+
+          <View style={styles.switchContainer}>
+            <Text style={styles.label}>✅ אישור תורים אוטומטי</Text>
+            <Switch
+              value={businessData.autoConfirm}
+              onValueChange={(value) => 
+                setBusinessData({ ...businessData, autoConfirm: value })
+              }
+            />
+          </View>
         </View>
 
         <View style={styles.settingsContainer}>
@@ -91,8 +193,7 @@ export default function BusinessSettings({ navigation }) {
             onPress={() => navigation.navigate('BusinessServicesSetup', { businessData })}
           >
             <View style={styles.sectionTitleContainer}>
-            <Text style={styles.navigationArrow}>⬅️</Text>
-
+              <Text style={styles.navigationArrow}>⬅️</Text>
               <Text style={styles.sectionTitle}>✂️ ניהול שירותים</Text>
             </View>
           </TouchableOpacity>
@@ -102,8 +203,7 @@ export default function BusinessSettings({ navigation }) {
             onPress={() => navigation.navigate('BusinessProfileSetup', { businessData })}
           >
             <View style={styles.sectionTitleContainer}>
-            <Text style={styles.navigationArrow}>⬅️</Text>
-
+              <Text style={styles.navigationArrow}>⬅️</Text>
               <Text style={styles.sectionTitle}>🖼️ אודות וגלריה</Text>
             </View>
           </TouchableOpacity>
@@ -113,8 +213,7 @@ export default function BusinessSettings({ navigation }) {
             onPress={() => navigation.navigate('EmployeeManagement', { businessData })}
           >
             <View style={styles.sectionTitleContainer}>
-            <Text style={styles.navigationArrow}>⬅️</Text>
-
+              <Text style={styles.navigationArrow}>⬅️</Text>
               <Text style={styles.sectionTitle}>👥 צוות העסק</Text>
             </View>
           </TouchableOpacity>
@@ -124,8 +223,7 @@ export default function BusinessSettings({ navigation }) {
             onPress={() => navigation.navigate('PaymentSettings', { businessData })}
           >
             <View style={styles.sectionTitleContainer}>
-            <Text style={styles.navigationArrow}>⬅️</Text>
-
+              <Text style={styles.navigationArrow}>⬅️</Text>
               <Text style={styles.sectionTitle}>💳 תשלומים</Text>
             </View>
           </TouchableOpacity>
@@ -133,14 +231,22 @@ export default function BusinessSettings({ navigation }) {
 
         <TouchableOpacity 
           style={[styles.section, styles.logoutSection]}
-          onPress={() => navigation.navigate('Welcome')}
+          onPress={handleLogout}
         >
           <Text style={styles.logoutText}>🚪 התנתק</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Text style={styles.saveButtonText}>💾 שמור שינויים</Text>
+      <TouchableOpacity 
+        style={[styles.saveButton, saving && styles.saveButtonDisabled]} 
+        onPress={handleSave}
+        disabled={saving}
+      >
+        {saving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.saveButtonText}>💾 שמור שינויים</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -219,32 +325,25 @@ const styles = StyleSheet.create({
   },
   switchContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'flex-end',
     marginBottom: 16,
-  },
-  switchLabel: {
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#333',
-    marginRight: 12,
+    paddingHorizontal: 8
   },
   saveButton: {
     backgroundColor: '#2196F3',
-    margin: 16,
     padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 8,
+    margin: 16,
+    alignItems: 'center'
+  },
+  saveButtonDisabled: {
+    opacity: 0.7
   },
   saveButtonText: {
-    fontSize: 17,
-    fontFamily: FontFamily["Assistant-Bold"],
     color: '#fff',
+    fontSize: 18,
+    fontFamily: FontFamily["Assistant-Bold"]
   },
   navigationArrow: {
     fontSize: 18,
@@ -285,5 +384,15 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     flex: 1,
     textAlign: 'right',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    fontFamily: FontFamily["Assistant-Regular"]
   },
 });

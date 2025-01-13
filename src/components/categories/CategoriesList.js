@@ -1,13 +1,49 @@
-import React, { useState } from 'react';
-import { View, ScrollView, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, ScrollView, Text, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import CategoryItem from './CategoryItem';
+import firestore from '@react-native-firebase/firestore';
 import { CATEGORIES } from './categoriesData';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const defaultCategoryIcon = require('../../assets/rectangle-406.png');
+
 const CategoriesList = ({ onSelectCategory }) => {
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const fetchCategories = async () => {
+    try {
+      const categoriesSnapshot = await firestore()
+        .collection('categories')
+        .orderBy('name', 'asc')
+        .get();
+      
+      const categoriesData = categoriesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const localCategory = CATEGORIES.find(cat => cat.id === data.categoryId);
+        return {
+          id: doc.id,
+          categoryId: data.categoryId,
+          title: data.name,
+          type: doc.id,
+          icon: localCategory ? localCategory.icon : defaultCategoryIcon
+        };
+      });
+      
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCategoryPress = (category) => {
     setSelectedCategory(category.type);
@@ -15,6 +51,19 @@ const CategoriesList = ({ onSelectCategory }) => {
       onSelectCategory(category);
     }
   };
+
+  if (loading) {
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>קטגוריות</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color={Color.primaryColorAmaranthPurple} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.section}>
@@ -30,7 +79,7 @@ const CategoriesList = ({ onSelectCategory }) => {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoriesScroll}
       >
-        {CATEGORIES.map((category) => (
+        {categories.map((category) => (
           <CategoryItem
             key={category.id}
             icon={category.icon}
@@ -71,6 +120,11 @@ const styles = StyleSheet.create({
     paddingRight: 0,
     paddingLeft: 16,
   },
+  loadingContainer: {
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
 });
 
 export default CategoriesList;

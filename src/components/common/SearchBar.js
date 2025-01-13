@@ -22,7 +22,7 @@ const SearchBar = ({ onPress, onFilterPress }) => {
             source={require("../../assets/ic--setting.png")}
           />
         </TouchableOpacity>
-        <Text style={styles.searchPlaceholder}>מה תרצי לחפש?</Text>
+        <Text style={styles.searchPlaceholder}>מה תרצו לחפש?</Text>
       </TouchableOpacity>
     </View>
   );

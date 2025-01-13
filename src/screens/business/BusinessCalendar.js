@@ -12,7 +12,14 @@ import CalendarStrip from 'react-native-calendar-strip';
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 
-const BusinessCalendar = ({ navigation }) => {
+const BusinessCalendar = ({ navigation, route }) => {
+  const businessData = route.params?.businessData || {
+    businessName: 'העסק שלי',
+    businessType: 'מספרה',
+    businessAddress: 'רחוב הראשי 1, תל אביב',
+    businessPhone: '050-1234567',
+  };
+
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [appointments, setAppointments] = useState([
     {
@@ -71,7 +78,7 @@ const BusinessCalendar = ({ navigation }) => {
     const appointmentsAtHour = appointments.filter(app => app.time.startsWith(hour));
     return (
       <View key={hour} style={styles.timeSlot}>
-        <Text style={styles.timeText}>{hour}:00</Text>
+        <Text style={styles.appointmentTime}>{hour}:00</Text>
         <View style={styles.appointmentsContainer}>
           {appointmentsAtHour.map(appointment => (
             <TouchableOpacity
@@ -85,10 +92,10 @@ const BusinessCalendar = ({ navigation }) => {
               })}
             >
               <View style={styles.appointmentHeader}>
-                <Text style={styles.customerName}>{appointment.customerName}</Text>
+                <Text style={styles.appointmentCustomer}>{appointment.customerName}</Text>
                 <Text style={styles.statusText}>{getStatusText(appointment.status)}</Text>
               </View>
-              <Text style={styles.serviceText}>{appointment.service}</Text>
+              <Text style={styles.appointmentService}>{appointment.service}</Text>
               <Text style={styles.durationText}>{appointment.duration} דקות</Text>
             </TouchableOpacity>
           ))}
@@ -188,8 +195,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#333',
+    fontFamily: FontFamily.assistantBold,
+    color: Color.primaryColorAmaranthPurple,
   },
   calendar: {
     height: 100,
@@ -198,24 +205,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   calendarHeader: {
-    color: '#333',
-    fontFamily: FontFamily["Assistant-Bold"],
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.assistantBold,
+    fontSize: 14,
   },
   dateNumber: {
     color: '#333',
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.assistantRegular,
+    fontSize: 14,
   },
   dateName: {
     color: '#666',
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.assistantRegular,
+    fontSize: 12,
   },
   highlightDateNumber: {
     color: '#fff',
-    fontFamily: FontFamily["Assistant-Bold"],
+    fontFamily: FontFamily.assistantBold,
+    fontSize: 14,
   },
   highlightDateName: {
     color: '#fff',
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.assistantRegular,
+    fontSize: 12,
   },
   summary: {
     flexDirection: 'row',
@@ -229,13 +241,13 @@ const styles = StyleSheet.create({
   },
   summaryNumber: {
     fontSize: 20,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#333',
+    fontFamily: FontFamily.assistantBold,
+    color: Color.primaryColorAmaranthPurple,
     marginBottom: 4,
   },
   summaryLabel: {
     fontSize: 14,
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.assistantRegular,
     color: '#666',
   },
   timelineContainer: {
@@ -245,61 +257,56 @@ const styles = StyleSheet.create({
   timeSlot: {
     marginBottom: 16,
   },
-  timeText: {
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#333',
-    marginBottom: 8,
-  },
-  appointmentsContainer: {
-    marginLeft: 24,
-  },
   appointmentCard: {
-    padding: 12,
+    backgroundColor: '#fff',
     borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
+  },
+  appointmentTime: {
+    fontSize: 16,
+    fontFamily: FontFamily.assistantBold,
+    color: Color.primaryColorAmaranthPurple,
     marginBottom: 8,
   },
-  appointmentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  appointmentCustomer: {
+    fontSize: 16,
+    fontFamily: FontFamily.assistantBold,
+    color: '#333',
     marginBottom: 4,
   },
-  customerName: {
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#fff',
+  appointmentService: {
+    fontSize: 14,
+    fontFamily: FontFamily.assistantRegular,
+    color: '#666',
+    marginBottom: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
   },
   statusText: {
     fontSize: 12,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#fff',
-  },
-  serviceText: {
-    fontSize: 14,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#fff',
-    marginBottom: 4,
-  },
-  durationText: {
-    fontSize: 12,
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.assistantRegular,
     color: '#fff',
   },
   addButton: {
     position: 'absolute',
-    bottom: 16,
-    right: 16,
+    bottom: 20,
+    right: 20,
     backgroundColor: Color.primaryColorAmaranthPurple,
-    borderRadius: 8,
     padding: 16,
+    borderRadius: 8,
     elevation: 4,
   },
   addButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontFamily: FontFamily["Assistant-Bold"],
-  },
+    fontFamily: FontFamily.assistantBold,
+  }
 });
 
 export default BusinessCalendar;

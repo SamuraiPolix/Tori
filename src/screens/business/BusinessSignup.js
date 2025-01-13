@@ -11,10 +11,14 @@ import {
   Platform,
   Modal,
   Pressable,
-  I18nManager
+  I18nManager,
+  Alert
 } from "react-native";
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import { Ionicons } from '@expo/vector-icons';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import LocationPicker from '../../components/location/LocationPicker';
 
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
@@ -41,7 +45,11 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     email: '',
     address: '',
     selectedCategories: [], 
+    password: '',
+    confirmPassword: '', 
   });
+
+  const [location, setLocation] = React.useState(null);
 
   const [showCategoryPicker, setShowCategoryPicker] = React.useState(false);
   const [tempSelectedCategories, setTempSelectedCategories] = React.useState([]);
@@ -90,6 +98,15 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     setShowCategoryPicker(false);
   };
 
+  const handleLocationSelected = (locationData) => {
+    console.log('Selected location:', locationData);
+    setLocation(locationData);
+    setFormData(prev => ({
+      ...prev,
+      address: locationData.address
+    }));
+  };
+
   const validateForm = () => {
     const newErrors = {};
     const phoneRegex = /^05\d{8}$/;
@@ -136,6 +153,17 @@ const BusinessSignupScreen = ({ navigation, route }) => {
       newErrors.categories = 'יש לבחור לפחות קטגוריה אחת';
     }
 
+    // בדיקת סיסמה
+    if (!formData.password) {
+      newErrors.password = 'סיסמה היא שדה חובה';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'הסיסמה חייבת להכיל לפחות 6 תווים';
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'הסיסמאות אינן תואמות';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -155,26 +183,96 @@ const BusinessSignupScreen = ({ navigation, route }) => {
   };
 
   const handleSubmit = async () => {
-    if (validateForm()) {
-      setIsSubmitting(true);
-      try {
-        // יצירת אובייקט עם נתוני ברירת מחדל נוספים
-        const businessDataToSend = {
-          ...formData,
-          customers: [],
-          appointments: [],
-          services: [],
-          stats: {
-            totalCustomers: 0,
-            totalAppointments: 0,
-            totalRevenue: 0
+    if (!validateForm()) return;
+
+    if (!location || !location.coordinates) {
+      Alert.alert('שגיאה', 'נא לבחור מיקום תקין');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // יצירת משתמש חדש עם Firebase Auth
+      const { user } = await auth().createUserWithEmailAndPassword(formData.email, formData.password);
+
+      // יצירת אובייקט עם כל הנתונים הנדרשים לעסק
+      const timestamp = new Date();
+      const businessData = {
+        businessId: user.uid,
+        name: formData.businessName.trim(),
+        ownerName: formData.ownerName.trim(),
+        ownerPhone: formData.ownerPhone,
+        businessPhone: formData.businessPhone,
+        email: formData.email,
+        address: formData.address,
+        location: {
+          latitude: location.coordinates.latitude,
+          longitude: location.coordinates.longitude
+        },
+        categories: formData.selectedCategories,
+        description: '',
+        images: [],
+        rating: 0,
+        reviewsCount: 0,
+        workingHours: {
+          sunday: { open: '09:00', close: '17:00', isOpen: true },
+          monday: { open: '09:00', close: '17:00', isOpen: true },
+          tuesday: { open: '09:00', close: '17:00', isOpen: true },
+          wednesday: { open: '09:00', close: '17:00', isOpen: true },
+          thursday: { open: '09:00', close: '17:00', isOpen: true },
+          friday: { open: '09:00', close: '14:00', isOpen: true },
+          saturday: { open: '00:00', close: '00:00', isOpen: false }
+        },
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+
+      // שמירת נתוני העסק ב-Firestore
+      await firestore()
+        .collection('businesses')
+        .doc(user.uid)
+        .set(businessData);
+
+      // עדכון פרופיל המשתמש
+      await user.updateProfile({
+        displayName: formData.businessName
+      });
+
+      // מעבר למסך הגדרת פרופיל העסק
+      navigation.reset({
+        index: 0,
+        routes: [
+          { 
+            name: 'BusinessProfileSetup',
+            params: { 
+              businessId: user.uid,
+              businessData: businessData
+            }
           }
-        };
-        
-        navigation.replace('BusinessDashboard', { businessData: businessDataToSend });
-      } catch (error) {
-        setErrors({ submit: 'אירעה שגיאה בשמירת הנתונים' });
+        ],
+      });
+    } catch (error) {
+      console.error('Registration Error:', error);
+      let errorMessage = 'אירעה שגיאה בתהליך ההרשמה';
+
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'כתובת האימייל כבר קיימת במערכת';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'כתובת האימייל אינה תקינה';
+          break;
+        case 'auth/operation-not-allowed':
+          errorMessage = 'הרשמה באמצעות אימייל וסיסמה אינה מאופשרת';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'הסיסמה חלשה מדי';
+          break;
       }
+
+      Alert.alert('שגיאה בהרשמה', errorMessage);
+      setErrors({ submit: errorMessage });
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -216,17 +314,21 @@ const BusinessSignupScreen = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView style={styles.content}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>✨ הצטרפות לתורי</Text>
-            <Text style={styles.headerSubtitle}>נשמח לעזור לך לנהל את העסק שלך! 🎯</Text>
+        <View style={styles.topPadding} />
+        
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>הצטרפו אלינו! 🎉</Text>
+            <Text style={styles.subtitle}>צרו חשבון עסקי חדש ותתחילו לקבל לקוחות</Text>
           </View>
+        </View>
 
+        <View style={styles.content}>
           <View style={styles.formSection}>
             <Text style={styles.sectionTitle}>🏢 פרטי העסק</Text>
             
@@ -295,14 +397,12 @@ const BusinessSignupScreen = ({ navigation, route }) => {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>📍 כתובת העסק</Text>
-              <TextInput
-                style={[styles.input, errors.address && styles.inputError]}
-                value={formData.address}
-                onChangeText={(text) => handleInputChange('address', text)}
-                placeholder="הכנס את כתובת העסק המלאה"
-                placeholderTextColor="#9ca3af"
-              />
-              {renderError('address')}
+              <LocationPicker onLocationSelected={handleLocationSelected} />
+              {location && (
+                <Text style={styles.selectedAddress}>
+                  כתובת נבחרה: {location.address}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -318,6 +418,32 @@ const BusinessSignupScreen = ({ navigation, route }) => {
                 </Text>
               </TouchableOpacity>
               {renderError('categories')}
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>סיסמה</Text>
+              <TextInput
+                style={[styles.input, errors.password && styles.inputError]}
+                value={formData.password}
+                onChangeText={(value) => handleInputChange('password', value)}
+                placeholder="הזן סיסמה"
+                secureTextEntry={true}
+                textAlign="right"
+              />
+              {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>אימות סיסמה</Text>
+              <TextInput
+                style={[styles.input, errors.confirmPassword && styles.inputError]}
+                value={formData.confirmPassword}
+                onChangeText={(value) => handleInputChange('confirmPassword', value)}
+                placeholder="הזן סיסמה שוב"
+                secureTextEntry={true}
+                textAlign="right"
+              />
+              {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword}</Text>}
             </View>
           </View>
 
@@ -337,84 +463,105 @@ const BusinessSignupScreen = ({ navigation, route }) => {
           >
             <Text style={styles.skipButtonText}>דלג עם נתוני דוגמה ⚡️</Text>
           </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
 
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showCategoryPicker}
-        onRequestClose={closeCategoryPicker}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🏷️ בחר קטגוריות</Text>
-            <ScrollView style={styles.categoriesList}>
-              {CATEGORIES.map((category) => (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[
-                    styles.categoryItem,
-                    tempSelectedCategories.includes(category.name) && styles.categoryItemSelected
-                  ]}
-                  onPress={() => handleCategoryToggle(category.name)}
-                >
-                  <Text style={[
-                    styles.categoryItemText,
-                    tempSelectedCategories.includes(category.name) && styles.categoryItemTextSelected
-                  ]}>
-                    {category.name}
-                  </Text>
-                  {tempSelectedCategories.includes(category.name) && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={showCategoryPicker}
+          onRequestClose={closeCategoryPicker}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>🏷️ בחר קטגוריות</Text>
+              <ScrollView style={styles.categoriesList}>
+                {CATEGORIES.map((category) => (
+                  <TouchableOpacity
+                    key={category.id}
+                    style={[
+                      styles.categoryItem,
+                      tempSelectedCategories.includes(category.name) && styles.categoryItemSelected
+                    ]}
+                    onPress={() => handleCategoryToggle(category.name)}
+                  >
+                    <Text style={[
+                      styles.categoryItemText,
+                      tempSelectedCategories.includes(category.name) && styles.categoryItemTextSelected
+                    ]}>
+                      {category.name}
+                    </Text>
+                    {tempSelectedCategories.includes(category.name) && (
+                      <Text style={styles.checkmark}>✓</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.modalButton} onPress={handleDoneCategories}>
+                  <Text style={styles.modalButtonText}>✅ סיום</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={handleDoneCategories}>
-                <Text style={styles.modalButtonText}>✅ סיום</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.modalButtonCancel]} onPress={closeCategoryPicker}>
-                <Text style={[styles.modalButtonText, styles.modalButtonTextCancel]}>❌ ביטול</Text>
-              </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalButton, styles.modalButtonCancel]} onPress={closeCategoryPicker}>
+                  <Text style={[styles.modalButtonText, styles.modalButtonTextCancel]}>❌ ביטול</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  topPadding: {
+    height: Platform.OS === 'ios' ? 80 : 60,
+  },
+  header: {
+    marginTop: 20,
+    marginHorizontal: 16,
+    marginBottom: 32,
     backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  headerContent: {
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 32,
+    fontFamily: FontFamily.primary,
+    color: '#1E293B',
+    marginBottom: 8,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: FontFamily.primary,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 24,
   },
   content: {
     flex: 1,
-    paddingVertical: 16,
-  },
-  header: {
-    marginBottom: 24,
-    alignItems: 'center',
-    width: '100%',
     paddingHorizontal: 16,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#2196F3',
-    marginBottom: 8,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#64748b',
-    textAlign: 'center',
-    writingDirection: 'rtl',
   },
   formSection: {
     backgroundColor: '#fff',
@@ -600,6 +747,12 @@ const styles = StyleSheet.create({
   },
   modalButtonTextCancel: {
     color: '#64748b',
+  },
+  selectedAddress: {
+    marginTop: 8,
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.assistant,
+    textAlign: 'right',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,17 @@ import {
   TextInput,
   Alert,
   Modal,
+  ActivityIndicator
 } from 'react-native';
 import { FontFamily } from '../../styles/GlobalStyles';
+import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 
 export default function BusinessServicesSetup({ navigation, route }) {
   const { businessData } = route.params;
-  const [services, setServices] = useState(businessData?.services || [
-    { id: '1', name: 'תספורת', price: '80', duration: '30' },
-    { id: '2', name: 'צבע', price: '200', duration: '60' },
-  ]);
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [newService, setNewService] = useState({ name: '', price: '', duration: '30' });
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -25,16 +27,71 @@ export default function BusinessServicesSetup({ navigation, route }) {
 
   const durationOptions = ['15', '30', '45', '60'];
 
+  // Load services from Firestore
+  useEffect(() => {
+    const loadServices = async () => {
+      try {
+        const businessDoc = await firestore()
+          .collection('businesses')
+          .doc(auth().currentUser.uid)
+          .get();
+
+        if (businessDoc.exists) {
+          const data = businessDoc.data();
+          if (data.services && data.services.length > 0) {
+            setServices(data.services);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading services:', error);
+        Alert.alert('שגיאה', 'אירעה שגיאה בטעינת השירותים');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadServices();
+  }, []);
+
+  // Save services to Firestore
+  const saveServices = async () => {
+    setSaving(true);
+    try {
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          services: services,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      Alert.alert('הצלחה', 'השירותים נשמרו בהצלחה');
+      navigation.navigate('BusinessProfileSetup', { businessData });
+    } catch (error) {
+      console.error('Error saving services:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת השירותים');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const addService = () => {
     if (!newService.name || !newService.price || !newService.duration) {
       Alert.alert('שגיאה', 'נא למלא את כל השדות');
       return;
     }
     
-    setServices([
+    const updatedServices = [
       ...services,
-      { ...newService, id: Date.now().toString() }
-    ]);
+      { 
+        ...newService, 
+        id: Date.now().toString(),
+        price: parseFloat(newService.price),
+        duration: parseInt(newService.duration)
+      }
+    ];
+    
+    setServices(updatedServices);
     setNewService({ name: '', price: '', duration: '30' });
   };
 
@@ -109,81 +166,102 @@ export default function BusinessServicesSetup({ navigation, route }) {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.content}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>✨ הוספת שירות חדש</Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>🏷️ שם השירות</Text>
-            <TextInput
-              style={styles.input}
-              value={newService.name}
-              onChangeText={(text) => setNewService({ ...newService, name: text })}
-              placeholder="לדוגמה: תספורת"
-              textAlign="right"
-            />
-          </View>
-
-          <View style={styles.inputRow}>
-            <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>💰 מחיר</Text>
-              <TextInput
-                style={styles.input}
-                value={newService.price}
-                onChangeText={(text) => setNewService({ ...newService, price: text })}
-                placeholder="₪"
-                keyboardType="numeric"
-                textAlign="right"
-              />
-            </View>
-
-            <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>⏱️ משך זמן</Text>
-              <DurationGrid 
-                value={newService.duration}
-                onChange={(duration) => setNewService({ ...newService, duration })}
-              />
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.addButton} onPress={addService}>
-            <Text style={styles.addButtonText}>➕ הוסף שירות</Text>
-          </TouchableOpacity>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.loadingText}>טוען שירותים...</Text>
         </View>
+      ) : (
+        <>
+          <ScrollView style={styles.content}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>✨ הוספת שירות חדש</Text>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>🏷️ שם השירות</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newService.name}
+                  onChangeText={(text) => setNewService({ ...newService, name: text })}
+                  placeholder="לדוגמה: תספורת"
+                  textAlign="right"
+                />
+              </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📋 רשימת השירותים</Text>
-          
-          <View style={styles.servicesList}>
-            {services.map((service) => (
-              <View key={service.id} style={styles.serviceCard}>
-                <View style={styles.serviceHeader}>
-                  <Text style={styles.serviceName}>{service.name}</Text>
-                  <View style={styles.serviceActions}>
-                    <TouchableOpacity 
-                      style={styles.editButton}
-                      onPress={() => handleEditService(service)}
-                    >
-                      <Text style={styles.editButtonText}>עריכה</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.removeButton}
-                      onPress={() => handleDeleteService(service)}
-                    >
-                      <Text style={styles.removeButtonText}>הסרה</Text>
-                    </TouchableOpacity>
-                  </View>
+              <View style={styles.inputRow}>
+                <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.label}>💰 מחיר</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newService.price}
+                    onChangeText={(text) => setNewService({ ...newService, price: text })}
+                    placeholder="₪"
+                    keyboardType="numeric"
+                    textAlign="right"
+                  />
                 </View>
-                
-                <View style={styles.serviceDetails}>
-                  <Text style={styles.serviceInfo}>💰 {service.price} ₪</Text>
-                  <Text style={styles.serviceInfo}>⏱️ {service.duration} דק'</Text>
+
+                <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.label}>⏱️ משך זמן</Text>
+                  <DurationGrid 
+                    value={newService.duration}
+                    onChange={(duration) => setNewService({ ...newService, duration })}
+                  />
                 </View>
               </View>
-            ))}
-          </View>
-        </View>
-      </ScrollView>
+
+              <TouchableOpacity style={styles.addButton} onPress={addService}>
+                <Text style={styles.addButtonText}>➕ הוסף שירות</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>📋 רשימת השירותים</Text>
+              
+              <View style={styles.servicesList}>
+                {services.map((service) => (
+                  <View key={service.id} style={styles.serviceCard}>
+                    <View style={styles.serviceHeader}>
+                      <Text style={styles.serviceName}>{service.name}</Text>
+                      <View style={styles.serviceActions}>
+                        <TouchableOpacity 
+                          style={styles.editButton}
+                          onPress={() => handleEditService(service)}
+                        >
+                          <Text style={styles.editButtonText}>עריכה</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={styles.removeButton}
+                          onPress={() => handleDeleteService(service)}
+                        >
+                          <Text style={styles.removeButtonText}>הסרה</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.serviceDetails}>
+                      <Text style={styles.serviceInfo}>💰 {service.price} ₪</Text>
+                      <Text style={styles.serviceInfo}>⏱️ {service.duration} דק'</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+
+          <TouchableOpacity 
+            style={[styles.saveButton, saving && styles.saveButtonDisabled]} 
+            onPress={saveServices}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>💾 שמור שינויים</Text>
+            )}
+          </TouchableOpacity>
+        </>
+      )}
 
       <Modal
         visible={showDeleteModal}
@@ -518,4 +596,29 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily["Assistant-Regular"],
     backgroundColor: '#f8fafc',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    fontFamily: FontFamily["Assistant-Regular"]
+  },
+  saveButton: {
+    backgroundColor: '#2196F3',
+    padding: 16,
+    borderRadius: 8,
+    margin: 16,
+    alignItems: 'center'
+  },
+  saveButtonDisabled: {
+    opacity: 0.7
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontFamily: FontFamily["Assistant-Bold"]
+  }
 });

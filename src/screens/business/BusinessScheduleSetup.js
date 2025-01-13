@@ -7,10 +7,14 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  TextInput
+  TextInput,
+  Alert,
+  Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
+import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 
 const BusinessScheduleSetup = ({ navigation, route }) => {
   const { businessData } = route.params;
@@ -18,9 +22,61 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
   const [autoApprove, setAutoApprove] = useState(false);
   const [allowSameDayBooking, setAllowSameDayBooking] = useState(true);
   const [maxFutureBookingDays, setMaxFutureBookingDays] = useState('30');
-  const [minTimeBeforeBooking, setMinTimeBeforeBooking] = useState('60'); // דקות
+  const [minTimeBeforeBooking, setMinTimeBeforeBooking] = useState('60');
   const [allowCancellation, setAllowCancellation] = useState(true);
-  const [cancellationTimeLimit, setCancellationTimeLimit] = useState('24'); // שעות
+  const [cancellationTimeLimit, setCancellationTimeLimit] = useState('24');
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedField, setSelectedField] = useState(null);
+  const [workingHours, setWorkingHours] = useState({
+    sunday: { isOpen: true, open: '09:00', close: '17:00' },
+    monday: { isOpen: true, open: '09:00', close: '17:00' },
+    tuesday: { isOpen: true, open: '09:00', close: '17:00' },
+    wednesday: { isOpen: true, open: '09:00', close: '17:00' },
+    thursday: { isOpen: true, open: '09:00', close: '17:00' },
+    friday: { isOpen: true, open: '09:00', close: '14:00' },
+    saturday: { isOpen: false, open: '00:00', close: '00:00' }
+  });
+
+  const daysTranslation = {
+    sunday: 'ראשון',
+    monday: 'שני',
+    tuesday: 'שלישי',
+    wednesday: 'רביעי',
+    thursday: 'חמישי',
+    friday: 'שישי',
+    saturday: 'שבת'
+  };
+
+  const timeOptions = Array.from({ length: 24 }, (_, i) => {
+    const hour = i.toString().padStart(2, '0');
+    return [`${hour}:00`, `${hour}:30`];
+  }).flat();
+
+  const handleTimeSelect = (time) => {
+    if (selectedDay && selectedField) {
+      handleWorkingHoursChange(selectedDay, selectedField, time);
+      setShowTimeModal(false);
+      setSelectedDay(null);
+      setSelectedField(null);
+    }
+  };
+
+  const openTimePicker = (day, field) => {
+    setSelectedDay(day);
+    setSelectedField(field);
+    setShowTimeModal(true);
+  };
+
+  const handleWorkingHoursChange = (day, field, value) => {
+    setWorkingHours(prev => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        [field]: value
+      }
+    }));
+  };
 
   const slotOptions = [
     { value: '15', label: '15 דקות' },
@@ -29,21 +85,35 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
     { value: '60', label: '60 דקות' },
   ];
 
-  const handleNext = () => {
-    const scheduleSettings = {
-      slotDuration,
-      autoApprove,
-      allowSameDayBooking,
-      maxFutureBookingDays,
-      minTimeBeforeBooking,
-      allowCancellation,
-      cancellationTimeLimit
-    };
+  const handleNext = async () => {
+    try {
+      const scheduleSettings = {
+        slotDuration,
+        autoApprove,
+        allowSameDayBooking,
+        maxFutureBookingDays: parseInt(maxFutureBookingDays),
+        minTimeBeforeBooking: parseInt(minTimeBeforeBooking),
+        allowCancellation,
+        cancellationTimeLimit: parseInt(cancellationTimeLimit)
+      };
 
-    // ניווט לדאשבורד העסק
-    navigation.navigate('BusinessDashboard', {
-      businessData: { ...businessData, scheduleSettings }
-    });
+      // שמירת הגדרות הזמנים ושעות הפעילות ב-Firestore
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          scheduleSettings,
+          workingHours,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      navigation.navigate('BusinessDashboard', {
+        businessData: { ...businessData, scheduleSettings, workingHours }
+      });
+    } catch (error) {
+      console.error('Error saving schedule settings:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת הגדרות הזמנים');
+    }
   };
 
   const renderSectionTitle = (title) => (
@@ -199,6 +269,53 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
           )}
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🕒 שעות פעילות</Text>
+          <Text style={styles.sectionDescription}>
+            הגדר את שעות הפעילות של העסק לכל יום בשבוע
+          </Text>
+
+          {Object.entries(workingHours).map(([day, hours]) => (
+            <View key={day} style={styles.workingHoursRow}>
+              <View style={styles.dayHeader}>
+                <Text style={styles.dayName}>{daysTranslation[day]}</Text>
+                <Switch
+                  value={hours.isOpen}
+                  onValueChange={(value) => handleWorkingHoursChange(day, 'isOpen', value)}
+                  trackColor={{ false: '#e0e0e0', true: Color.primaryColorAmaranthPurple }}
+                  thumbColor={hours.isOpen ? '#fff' : '#f4f3f4'}
+                />
+              </View>
+
+              {hours.isOpen && (
+                <View style={styles.hoursContainer}>
+                  <View style={styles.timePickerContainer}>
+                    <Text style={styles.timeLabel}>פתיחה</Text>
+                    <TouchableOpacity
+                      style={styles.timeButton}
+                      onPress={() => openTimePicker(day, 'open')}
+                    >
+                      <Text style={styles.timeButtonText}>{hours.open}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.timeSeperator}>עד</Text>
+
+                  <View style={styles.timePickerContainer}>
+                    <Text style={styles.timeLabel}>סגירה</Text>
+                    <TouchableOpacity
+                      style={styles.timeButton}
+                      onPress={() => openTimePicker(day, 'close')}
+                    >
+                      <Text style={styles.timeButtonText}>{hours.close}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+
         <TouchableOpacity
           style={styles.nextButton}
           onPress={handleNext}
@@ -208,6 +325,37 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+      <Modal
+        visible={showTimeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowTimeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>בחר שעה</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowTimeModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.timeList}>
+              {timeOptions.map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={styles.timeOption}
+                  onPress={() => handleTimeSelect(time)}
+                >
+                  <Text style={styles.timeOptionText}>{time}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -306,8 +454,8 @@ const styles = StyleSheet.create({
   },
   slotOptionText: {
     fontSize: 16,
-    fontFamily: FontFamily["Assistant-Medium"],
     color: '#64748b',
+    fontFamily: FontFamily["Assistant-Medium"],
   },
   selectedSlotOptionText: {
     color: '#fff',
@@ -389,6 +537,93 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  workingHoursRow: {
+    marginVertical: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 16,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dayName: {
+    fontSize: 16,
+    fontFamily: FontFamily.heeboMedium,
+    color: '#333',
+  },
+  hoursContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  timePickerContainer: {
+    flex: 1,
+  },
+  timeLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  timeButton: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 12,
+    alignItems: 'center',
+    width: '100%',
+  },
+  timeButtonText: {
+    fontSize: 16,
+    color: '#333',
+    fontFamily: FontFamily.heeboRegular,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.heeboMedium,
+    color: '#333',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  timeList: {
+    padding: 16,
+  },
+  timeOption: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  timeOptionText: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    fontFamily: FontFamily.heeboRegular,
   },
 });
 

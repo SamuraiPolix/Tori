@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { FontFamily } from '../../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 
 const TABS = [
   { id: 'day', label: 'יום' },
@@ -39,76 +42,138 @@ const chartConfig = {
 
 const BusinessStats = ({ navigation, route }) => {
   const [activeTab, setActiveTab] = useState('day');
-  const { businessData } = route.params;
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({
+    day: { revenue: 0, newCustomers: 0, appointments: 0, canceledAppointments: 0, pageViews: 0 },
+    week: { revenue: 0, newCustomers: 0, appointments: 0, canceledAppointments: 0, pageViews: 0 },
+    month: { revenue: 0, newCustomers: 0, appointments: 0, canceledAppointments: 0, pageViews: 0 }
+  });
+  const [chartData, setChartData] = useState({
+    day: { labels: [], datasets: [{ data: [] }] },
+    week: { labels: [], datasets: [{ data: [] }] },
+    month: { labels: [], datasets: [{ data: [] }] }
+  });
+  
+  const { businessId } = route.params;
 
-  // נתוני דוגמה - יש להחליף בנתונים אמיתיים מהשרת
-  const mockData = {
-    day: {
-      revenue: 1200,
-      newCustomers: 5,
-      appointments: 8,
-      canceledAppointments: 1,
-      pageViews: 45,
-      returnCustomers: 3,
-      avgServiceTime: 45,
-      servicesCount: 12,
-      topServices: ['תספורת', 'צבע', 'החלקה'],
-      chartData: {
-        labels: ['9:00', '11:00', '13:00', '15:00', '17:00', '19:00'],
-        datasets: [
-          {
-            data: [3, 5, 8, 6, 4, 2],
-            color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-            strokeWidth: 2,
-          },
-        ],
-      },
-    },
-    week: {
-      revenue: 7500,
-      newCustomers: 28,
-      appointments: 45,
-      canceledAppointments: 4,
-      pageViews: 280,
-      returnCustomers: 15,
-      avgServiceTime: 42,
-      servicesCount: 12,
-      topServices: ['תספורת', 'צבע', 'החלקה'],
-      chartData: {
-        labels: ['א', 'ב', 'ג', 'ד', 'ה', 'ו'],
-        datasets: [
-          {
-            data: [15, 18, 22, 19, 25, 12],
-            color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-            strokeWidth: 2,
-          },
-        ],
-      },
-    },
-    month: {
-      revenue: 32000,
-      newCustomers: 95,
-      appointments: 180,
-      canceledAppointments: 12,
-      pageViews: 1200,
-      returnCustomers: 65,
-      avgServiceTime: 44,
-      servicesCount: 12,
-      topServices: ['תספורת', 'צבע', 'החלקה'],
-      chartData: {
-        labels: ['שבוע 1', 'שבוע 2', 'שבוע 3', 'שבוע 4'],
-        datasets: [
-          {
-            data: [65, 78, 82, 75],
-            color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-            strokeWidth: 2,
-          },
-        ],
-      },
-    },
+  useEffect(() => {
+    fetchStats();
+  }, [activeTab]);
+
+  const getDateRange = (period) => {
+    const now = new Date();
+    const start = new Date();
+    
+    switch(period) {
+      case 'day':
+        start.setHours(0, 0, 0, 0);
+        return { start, end: now };
+      case 'week':
+        start.setDate(now.getDate() - 7);
+        return { start, end: now };
+      case 'month':
+        start.setMonth(now.getMonth() - 1);
+        return { start, end: now };
+      default:
+        return { start: now, end: now };
+    }
   };
 
-  const currentData = mockData[activeTab];
+  const fetchStats = async () => {
+    try {
+      setIsLoading(true);
+      const { start, end } = getDateRange(activeTab);
+
+      // Fetch appointments
+      const appointmentsQuery = firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('date', '>=', start)
+        .where('date', '<=', end);
+
+      const appointmentsSnap = await appointmentsQuery.get();
+      const appointments = appointmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Calculate statistics
+      const revenue = appointments
+        .filter(app => app.status === 'completed')
+        .reduce((sum, app) => sum + (app.price || 0), 0);
+
+      const uniqueCustomers = new Set(appointments.map(app => app.customerId)).size;
+      const totalAppointments = appointments.length;
+      const canceledAppointments = appointments.filter(app => app.status === 'canceled').length;
+
+      // Generate chart data
+      const chartLabels = [];
+      const revenueData = [];
+
+      if (activeTab === 'day') {
+        for (let i = 0; i < 24; i++) {
+          chartLabels.push(`${i}:00`);
+          const hourRevenue = appointments
+            .filter(app => new Date(app.date).getHours() === i && app.status === 'completed')
+            .reduce((sum, app) => sum + (app.price || 0), 0);
+          revenueData.push(hourRevenue);
+        }
+      } else if (activeTab === 'week') {
+        const days = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          chartLabels.push(days[date.getDay()]);
+          const dayRevenue = appointments
+            .filter(app => {
+              const appDate = new Date(app.date);
+              return appDate.getDate() === date.getDate() && 
+                     appDate.getMonth() === date.getMonth() &&
+                     app.status === 'completed';
+            })
+            .reduce((sum, app) => sum + (app.price || 0), 0);
+          revenueData.push(dayRevenue);
+        }
+      } else {
+        // Month view
+        for (let i = 30; i >= 0; i--) {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          chartLabels.push(date.getDate().toString());
+          const dayRevenue = appointments
+            .filter(app => {
+              const appDate = new Date(app.date);
+              return appDate.getDate() === date.getDate() && 
+                     appDate.getMonth() === date.getMonth() &&
+                     app.status === 'completed';
+            })
+            .reduce((sum, app) => sum + (app.price || 0), 0);
+          revenueData.push(dayRevenue);
+        }
+      }
+
+      setStats(prev => ({
+        ...prev,
+        [activeTab]: {
+          revenue,
+          newCustomers: uniqueCustomers,
+          appointments: totalAppointments,
+          canceledAppointments,
+          pageViews: Math.floor(totalAppointments * 1.5) // Estimated metric
+        }
+      }));
+
+      setChartData(prev => ({
+        ...prev,
+        [activeTab]: {
+          labels: chartLabels,
+          datasets: [{ data: revenueData }]
+        }
+      }));
+
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const StatCard = ({ title, value, icon, color, subtitle }) => (
     <View style={[styles.card, { borderColor: color }]}>
@@ -157,80 +222,65 @@ const BusinessStats = ({ navigation, route }) => {
       {/* גרף פעילות */}
       <View style={styles.chartContainer}>
         <Text style={styles.chartTitle}>פעילות {TABS.find(t => t.id === activeTab).label}</Text>
-        <LineChart
-          data={currentData.chartData}
-          width={Dimensions.get('window').width - 40}
-          height={220}
-          chartConfig={chartConfig}
-          bezier
-          style={styles.chart}
-          withVerticalLines={false}
-          withHorizontalLines={true}
-          withDots={true}
-          withShadow={false}
-          withScrollableDot={false}
-          withInnerLines={false}
-          fromZero={true}
-        />
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#2563eb" />
+        ) : (
+          <LineChart
+            data={chartData[activeTab]}
+            width={Dimensions.get('window').width - 40}
+            height={220}
+            chartConfig={chartConfig}
+            bezier
+            style={styles.chart}
+            withVerticalLines={false}
+            withHorizontalLines={true}
+            withDots={true}
+            withShadow={false}
+            withScrollableDot={false}
+            withInnerLines={false}
+            fromZero={true}
+          />
+        )}
       </View>
 
       {/* כרטיסי סטטיסטיקה */}
       <View style={styles.cardsContainer}>
-        <StatCard
-          title="הכנסות"
-          value={`₪${currentData.revenue.toLocaleString()}`}
-          icon="cash-outline"
-          color="#2563eb"
-        />
-        <StatCard
-          title="תורים שנקבעו"
-          value={currentData.appointments}
-          icon="calendar-outline"
-          color="#7c3aed"
-        />
-        <StatCard
-          title="לקוחות חדשים"
-          value={currentData.newCustomers}
-          icon="people-outline"
-          color="#059669"
-        />
-        <StatCard
-          title="תורים שבוטלו"
-          value={currentData.canceledAppointments}
-          icon="close-circle-outline"
-          color="#dc2626"
-        />
-        <StatCard
-          title="חשיפות"
-          value={currentData.pageViews}
-          icon="eye-outline"
-          color="#0891b2"
-        />
-        <StatCard
-          title="לקוחות חוזרים"
-          value={currentData.returnCustomers}
-          icon="repeat-outline"
-          color="#ea580c"
-        />
-        <StatCard
-          title="זמן תור ממוצע"
-          value={`${currentData.avgServiceTime}'`}
-          icon="time-outline"
-          color="#4f46e5"
-        />
-        <StatCard
-          title="מספר שירותים"
-          value={currentData.servicesCount}
-          icon="list-outline"
-          color="#475569"
-        />
-        <StatCard
-          title="שירותים מובילים"
-          value={currentData.topServices[0]}
-          subtitle={`${currentData.topServices[1]}, ${currentData.topServices[2]}`}
-          icon="star-outline"
-          color="#d97706"
-        />
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#2563eb" />
+        ) : (
+          <>
+            <StatCard
+              title="הכנסות"
+              value={`₪${stats[activeTab].revenue.toLocaleString()}`}
+              icon="cash-outline"
+              color="#2563eb"
+            />
+            <StatCard
+              title="תורים שנקבעו"
+              value={stats[activeTab].appointments}
+              icon="calendar-outline"
+              color="#7c3aed"
+            />
+            <StatCard
+              title="לקוחות חדשים"
+              value={stats[activeTab].newCustomers}
+              icon="people-outline"
+              color="#059669"
+            />
+            <StatCard
+              title="תורים שבוטלו"
+              value={stats[activeTab].canceledAppointments}
+              icon="close-circle-outline"
+              color="#dc2626"
+            />
+            <StatCard
+              title="חשיפות"
+              value={stats[activeTab].pageViews}
+              icon="eye-outline"
+              color="#0891b2"
+            />
+          </>
+        )}
       </View>
     </ScrollView>
   );

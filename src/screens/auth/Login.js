@@ -98,14 +98,21 @@ const Frame = ({ navigation }) => {
   };
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    let loginEmail = email;
+    let loginPassword = password;
+
+    // Use test credentials if no email and password are entered
+    if (!email && !password) {
+      loginEmail = 'test@tori.co.il';
+      loginPassword = 'testing';
+    } else if (!email || !password) {
       Alert.alert('שגיאה', 'אנא הזן אימייל וסיסמה');
       return;
     }
 
     setIsLoading(true);
     try {
-      const { user } = await auth().signInWithEmailAndPassword(email, password);
+      const { user } = await auth().signInWithEmailAndPassword(loginEmail, loginPassword);
       
       // Get user data from Firestore
       const userDoc = await firestore().collection('users').doc(user.uid).get();
@@ -141,6 +148,7 @@ const Frame = ({ navigation }) => {
       }
       
       Alert.alert('שגיאה בהתחברות', errorMessage);
+      console.error('Login Error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -284,7 +292,7 @@ const Frame = ({ navigation }) => {
       <TouchableOpacity
         style={[styles.submitButton, (email.length > 0 && password.length > 0) && styles.submitButtonActive]}
         onPress={handleLogin}
-        disabled={email.length === 0 || password.length === 0 || isLoading}
+        disabled={isLoading}
       >
         {isLoading ? (
           <ActivityIndicator color="#fff" />

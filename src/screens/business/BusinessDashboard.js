@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,58 +6,157 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ScrollView,
-  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 import BusinessSidebar from '../../components/BusinessSidebar';
+import firestore from '@react-native-firebase/firestore';
 
 const BusinessDashboard = ({ navigation, route }) => {
-  const businessData = route.params?.businessData || {
-    businessName: 'העסק שלי',
-    businessType: 'מספרה',
-    businessAddress: 'רחוב הראשי 1, תל אביב',
-    businessPhone: '050-1234567',
-  };
+  const { businessId, businessData: initialBusinessData } = route.params;
+  const [businessData, setBusinessData] = useState(initialBusinessData);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showSidebar, setShowSidebar] = useState(false);
-  const [pendingAppointments] = useState([
-    {
-      id: 'p1',
-      customerName: 'יעקב לוי',
-      service: 'תספורת גברים',
-      date: '2024-02-01',
-      time: '15:00',
-      status: 'pending'
-    },
-    {
-      id: 'p2',
-      customerName: 'משה כהן',
-      service: 'תספורת + זקן',
-      date: '2024-02-02',
-      time: '12:30',
-      status: 'pending'
-    }
-  ]);
+  const [pendingAppointments, setPendingAppointments] = useState([]);
+  const [canceledAppointments, setCanceledAppointments] = useState([]);
+  const [completedAppointments, setCompletedAppointments] = useState([]);
+  const [todayAppointments, setTodayAppointments] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalAppointments: 0,
+    totalRevenue: 0,
+    averageRating: 0
+  });
 
-  const [canceledAppointments] = useState([
-    {
-      id: 'c1',
-      customerName: 'דן אבידן',
-      service: 'תספורת גברים',
-      date: '2024-02-01',
-      time: '16:00',
-      status: 'canceled'
+  useEffect(() => {
+    fetchBusinessData();
+    fetchAppointments();
+  }, []);
+
+  const fetchBusinessData = async () => {
+    try {
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .get();
+      
+      if (businessDoc.exists) {
+        const data = businessDoc.data();
+        setBusinessData(data);
+      }
+    } catch (error) {
+      console.error('Error fetching business data:', error);
     }
-  ]);
+  };
+
+  const fetchAppointments = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Get today's date at midnight
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      // Query for today's appointments
+      const todayQuery = firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('date', '>=', today)
+        .where('date', '<', tomorrow);
+
+      // Queries for different appointment statuses
+      const pendingQuery = firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('status', '==', 'pending');
+      
+      const canceledQuery = firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('status', '==', 'canceled');
+
+      const completedQuery = firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('status', '==', 'completed');
+
+      // Fetch all queries in parallel
+      const [todaySnap, pendingSnap, canceledSnap, completedSnap] = await Promise.all([
+        todayQuery.get(),
+        pendingQuery.get(),
+        canceledQuery.get(),
+        completedQuery.get()
+      ]);
+
+      // Process results
+      const todayAppts = todaySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const pendingAppts = pendingSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const canceledAppts = canceledSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const completedAppts = completedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Calculate statistics
+      const totalRevenue = completedAppts.reduce((sum, appt) => sum + (appt.price || 0), 0);
+      const ratings = completedAppts.filter(appt => appt.rating).map(appt => appt.rating);
+      const averageRating = ratings.length > 0 
+        ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
+        : 0;
+
+      setTodayAppointments(todayAppts);
+      setPendingAppointments(pendingAppts);
+      setCanceledAppointments(canceledAppts);
+      setCompletedAppointments(completedAppts);
+      setStats({
+        totalAppointments: completedAppts.length,
+        totalRevenue,
+        averageRating
+      });
+
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateAppointment = async (appointmentId, newStatus) => {
+    try {
+      await firestore()
+        .collection('appointments')
+        .doc(appointmentId)
+        .update({
+          status: newStatus,
+          updatedAt: new Date()
+        });
+
+      // Refresh data
+      fetchAppointments();
+    } catch (error) {
+      console.error('Error updating appointment:', error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Color.primaryColorAmaranthPurple} />
+          <Text style={styles.loadingText}>טוען נתונים...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <BusinessSidebar 
         isVisible={showSidebar}
         onClose={() => setShowSidebar(false)}
-        businessData={businessData}
         navigation={navigation}
+        businessData={businessData}
+        currentScreen="BusinessDashboard"
       />
 
       <View style={styles.header}>
@@ -65,7 +164,7 @@ const BusinessDashboard = ({ navigation, route }) => {
           style={styles.menuButton}
           onPress={() => setShowSidebar(true)}
         >
-          <Ionicons name="menu" size={24} color={Color.primary} />
+          <Ionicons name="menu-outline" size={28} color={Color.primaryColorAmaranthPurple} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{businessData.businessName}</Text>
       </View>
@@ -81,39 +180,82 @@ const BusinessDashboard = ({ navigation, route }) => {
 
         <View style={styles.appointmentSection}>
           <Text style={styles.sectionTitle}>⏳ תורים ממתינים לאישור</Text>
-          {pendingAppointments.map((appointment) => (
-            <View key={appointment.id} style={styles.appointmentCard}>
-              <Text style={styles.appointmentCustomer}>👤 {appointment.customerName}</Text>
-              <Text style={styles.appointmentDetails}>
-                ✂️ {appointment.service}
-                {'\n'}
-                🗓️ {appointment.date} | ⏰ {appointment.time}
-              </Text>
-              <View style={styles.appointmentActions}>
-                <TouchableOpacity style={[styles.actionButton, styles.approveButton]}>
-                  <Text style={styles.approveButtonText}>✅ אישור</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionButton, styles.rejectButton]}>
-                  <Text style={styles.rejectButtonText}>❌ דחייה</Text>
-                </TouchableOpacity>
+          {pendingAppointments.length === 0 ? (
+            <Text style={styles.emptyStateText}>אין תורים ממתינים לאישור</Text>
+          ) : (
+            pendingAppointments.map((appointment) => (
+              <View key={appointment.id} style={styles.appointmentCard}>
+                <Text style={styles.appointmentCustomer}>👤 {appointment.customerName}</Text>
+                <Text style={styles.appointmentDetails}>
+                  ✂️ {appointment.service}
+                  {'\n'}
+                  🗓️ {appointment.date} | ⏰ {appointment.time}
+                </Text>
+                <View style={styles.appointmentActions}>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.approveButton]}
+                    onPress={() => handleUpdateAppointment(appointment.id, 'confirmed')}
+                  >
+                    <Text style={styles.approveButtonText}>✅ אישור</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, styles.rejectButton]}
+                    onPress={() => handleUpdateAppointment(appointment.id, 'canceled')}
+                  >
+                    <Text style={styles.rejectButtonText}>❌ דחייה</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          ))}
+            ))
+          )}
         </View>
 
         <View style={styles.appointmentSection}>
           <Text style={styles.sectionTitle}>🚫 תורים שבוטלו</Text>
-          {canceledAppointments.map((appointment) => (
-            <View key={appointment.id} style={styles.appointmentCard}>
-              <Text style={styles.appointmentCustomer}>👤 {appointment.customerName}</Text>
-              <Text style={styles.appointmentDetails}>
-                ✂️ {appointment.service}
-                {'\n'}
-                🗓️ {appointment.date} | ⏰ {appointment.time}
-              </Text>
-              <Text style={styles.canceledStatus}>❌ בוטל</Text>
-            </View>
-          ))}
+          {canceledAppointments.length === 0 ? (
+            <Text style={styles.emptyStateText}>אין תורים שבוטלו</Text>
+          ) : (
+            canceledAppointments.map((appointment) => (
+              <View key={appointment.id} style={styles.appointmentCard}>
+                <Text style={styles.appointmentCustomer}>👤 {appointment.customerName}</Text>
+                <Text style={styles.appointmentDetails}>
+                  ✂️ {appointment.service}
+                  {'\n'}
+                  🗓️ {appointment.date} | ⏰ {appointment.time}
+                </Text>
+                <Text style={styles.canceledStatus}>❌ בוטל</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.appointmentSection}>
+          <Text style={styles.sectionTitle}>📆 תורים שהתקיימו היום</Text>
+          {todayAppointments.length === 0 ? (
+            <Text style={styles.emptyStateText}>אין תורים שהתקיימו היום</Text>
+          ) : (
+            todayAppointments.map((appointment) => (
+              <View key={appointment.id} style={styles.appointmentCard}>
+                <Text style={styles.appointmentCustomer}>👤 {appointment.customerName}</Text>
+                <Text style={styles.appointmentDetails}>
+                  ✂️ {appointment.service}
+                  {'\n'}
+                  🗓️ {appointment.date} | ⏰ {appointment.time}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.appointmentSection}>
+          <Text style={styles.sectionTitle}>📊 סטטיסטיקות</Text>
+          <Text style={styles.statsText}>
+            מספר תורים: {stats.totalAppointments}
+            {'\n'}
+            הכנסות כוללות: {stats.totalRevenue}
+            {'\n'}
+            ממוצע דירוג: {stats.averageRating}
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -124,6 +266,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f2f5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    fontFamily: FontFamily.assistantRegular,
+    color: Color.primaryColorAmaranthPurple,
+  },
+  emptyStateText: {
+    textAlign: 'center',
+    fontSize: 14,
+    fontFamily: FontFamily.assistantRegular,
+    color: '#666',
+    marginTop: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    elevation: 2,
+  },
+  menuButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontFamily: FontFamily.assistantBold,
+    color: Color.primaryColorAmaranthPurple,
+    textAlign: 'right',
   },
   mainContent: {
     flex: 1,
@@ -142,18 +322,17 @@ const styles = StyleSheet.create({
   },
   welcomeTitle: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontFamily: FontFamily.assistantBold,
     marginBottom: 10,
     textAlign: 'right',
-    fontFamily: FontFamily.primary,
-    color: Color.primary,
+    color: Color.primaryColorAmaranthPurple,
   },
   welcomeDescription: {
     fontSize: 14,
     lineHeight: 20,
     color: '#4a5568',
     textAlign: 'right',
-    fontFamily: FontFamily.primary,
+    fontFamily: FontFamily.assistantRegular,
   },
   appointmentSection: {
     backgroundColor: '#ffffff',
@@ -168,11 +347,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: FontFamily.assistantBold,
     marginBottom: 16,
     textAlign: 'right',
-    fontFamily: FontFamily.primary,
-    color: Color.primary,
+    color: Color.primaryColorAmaranthPurple,
   },
   appointmentCard: {
     backgroundColor: '#f8fafc',
@@ -184,10 +362,9 @@ const styles = StyleSheet.create({
   },
   appointmentCustomer: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontFamily: FontFamily.assistantBold,
     marginBottom: 6,
     textAlign: 'right',
-    fontFamily: FontFamily.primary,
     color: '#2d3748',
   },
   appointmentDetails: {
@@ -195,74 +372,49 @@ const styles = StyleSheet.create({
     color: '#4a5568',
     marginBottom: 10,
     textAlign: 'right',
-    fontFamily: FontFamily.primary,
+    fontFamily: FontFamily.assistantRegular,
     lineHeight: 20,
   },
   appointmentActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 12,
+    gap: 8,
   },
   actionButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
   },
   approveButton: {
-    borderColor: '#10b981',
+    backgroundColor: '#dcfce7',
   },
   rejectButton: {
-    borderColor: '#ef4444',
+    backgroundColor: '#fee2e2',
   },
   approveButtonText: {
-    color: '#10b981',
     fontSize: 14,
-    fontWeight: 'bold',
-    fontFamily: FontFamily.primary,
+    color: '#16a34a',
+    fontFamily: FontFamily.assistantBold,
   },
   rejectButtonText: {
-    color: '#ef4444',
     fontSize: 14,
-    fontWeight: 'bold',
-    fontFamily: FontFamily.primary,
+    color: '#dc2626',
+    fontFamily: FontFamily.assistantBold,
   },
   canceledStatus: {
-    color: '#ef4444',
     fontSize: 14,
-    fontWeight: 'bold',
+    color: '#dc2626',
     textAlign: 'right',
-    fontFamily: FontFamily.primary,
+    fontFamily: FontFamily.assistantBold,
   },
-  header: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginRight: 16,
-    fontFamily: FontFamily.primary,
-    color: Color.primary,
-  },
-  menuButton: {
-    padding: 8,
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-  },
+  statsText: {
+    fontSize: 16,
+    fontFamily: FontFamily.assistantRegular,
+    color: '#4a5568',
+    textAlign: 'right',
+  }
 });
 
 export default BusinessDashboard;

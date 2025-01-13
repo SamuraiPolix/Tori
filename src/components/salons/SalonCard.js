@@ -1,27 +1,69 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { Image } from "expo-image";
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import { Ionicons } from "@expo/vector-icons";
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH * 0.7;
 
-const SalonCard = ({ salon, onPress }) => {
+const SalonCard = ({ salon: business, onPress }) => {
   const [isFavorite, setIsFavorite] = React.useState(false);
 
-  const formatDistance = (distance) => {
-    if (distance < 1) {
-      // אם המרחק קטן מקילומטר, נציג במטרים
-      return `${(distance * 1000).toFixed(0)}מ'`;
+  useEffect(() => {
+    checkIfFavorite();
+  }, []);
+
+  const checkIfFavorite = async () => {
+    const currentUser = auth().currentUser;
+    if (!currentUser) return;
+
+    try {
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+
+      const favorites = userDoc.data()?.favorites || [];
+      setIsFavorite(favorites.includes(business.id));
+    } catch (error) {
+      console.error('Error checking favorite status:', error);
     }
-    // אחרת נציג בקילומטרים עם ספרה אחת אחרי הנקודה
-    return `${distance.toFixed(1)}ק"מ`;
   };
 
-  const handleFavoritePress = (event) => {
+  const handleFavoritePress = async (event) => {
     event.stopPropagation();
-    setIsFavorite(!isFavorite);
+    const currentUser = auth().currentUser;
+    if (!currentUser) return;
+
+    try {
+      const userRef = firestore().collection('users').doc(currentUser.uid);
+      
+      if (isFavorite) {
+        await userRef.update({
+          favorites: firestore.FieldValue.arrayRemove(business.id)
+        });
+      } else {
+        await userRef.update({
+          favorites: firestore.FieldValue.arrayUnion(business.id)
+        });
+      }
+      
+      setIsFavorite(!isFavorite);
+    } catch (error) {
+      console.error('Error updating favorites:', error);
+    }
+  };
+
+  const formatDistance = (distance) => {
+    if (!distance && distance !== 0) return '';
+    
+    if (distance < 1) {
+      return `${(distance * 1000).toFixed(0)}מ'`;
+    }
+    return `${distance.toFixed(1)}ק"מ`;
   };
 
   return (
@@ -37,23 +79,28 @@ const SalonCard = ({ salon, onPress }) => {
         />
       </TouchableOpacity>
       <View style={styles.imageContainer}>
-        <Image source={salon.image} style={styles.image} contentFit="cover" />
+        <Image 
+          source={business.images?.[0] || null} 
+          style={styles.image} 
+          contentFit="cover" 
+        />
       </View>
       <View style={styles.infoContainer}>
         <View style={styles.titleRow}>
-          <Text style={styles.title}>{salon.name}</Text>
+          <Text style={styles.title}>{business.name || ''}</Text>
         </View>
         <View style={styles.infoRow}>
           <View style={styles.ratingContainer}>
             <Ionicons name="star" size={16} color="#FFD700" />
-            <Text style={styles.rating}>{salon.rating}</Text>
-            <Text style={styles.reviewsText}>({salon.reviewsCount} ביקורות)</Text>
-
+            <Text style={styles.rating}>{typeof business.rating === 'number' ? business.rating.toFixed(1) : '0.0'}</Text>
+            <Text style={styles.reviewsText}>({business.reviewsCount || 0} ביקורות)</Text>
           </View>
-          <View style={styles.locationContainer}>
-            <Ionicons name="location" size={16} color="#666666" />
-            <Text style={styles.location}>{formatDistance(salon.distance)}</Text>
-          </View>
+          {business.distance !== undefined && (
+            <View style={styles.locationContainer}>
+              <Ionicons name="location" size={16} color="#666666" />
+              <Text style={styles.location}>{formatDistance(business.distance)}</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>

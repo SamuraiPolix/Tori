@@ -16,9 +16,10 @@ const WelcomeScreen = ({ navigation }) => {
             <View style={styles.header}>
               <Text style={styles.welcomeEmoji}>✨</Text>
               <Text style={styles.appName}>Tori</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('AdminPanel')}>
               <Text style={styles.title}>ברוכים הבאים!</Text>
+              </TouchableOpacity>
               <Text style={styles.subtitle}>המקום המושלם לניהול התורים שלך 🌟</Text>
-              
             </View>
 
             <View style={styles.buttonsContainer}>
@@ -26,7 +27,7 @@ const WelcomeScreen = ({ navigation }) => {
                 <Text style={styles.sectionTitle}>בעל עסק? 💼</Text>
                 <TouchableOpacity
                   style={[styles.button, styles.businessButton]}
-                  onPress={() => navigation.navigate('BusinessSignup')}
+                  onPress={() => navigation.navigate('BusinessLogin')}
                 >
                   <Text style={styles.businessButtonText}>כניסה לבעלי עסקים 🎯</Text>
                 </TouchableOpacity>

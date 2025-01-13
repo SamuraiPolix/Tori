@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   TouchableOpacity,
   TextInput,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
+import firestore from '@react-native-firebase/firestore';
 
 const getDayName = (dateString) => {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -24,30 +26,84 @@ const formatDate = (dateString) => {
 };
 
 const BusinessCustomers = ({ navigation, route }) => {
-  const { businessData } = route.params;
+  const { businessId } = route.params;
   const [searchQuery, setSearchQuery] = useState('');
-  const [customers] = useState([
-    {
-      id: '1',
-      name: 'ישראל ישראלי',
-      phone: '0501234567',
-      email: 'israel@gmail.com',
-      totalVisits: 15,
-      totalSpent: 1200,
-      lastVisit: '2024-01-15',
-      canceledAppointments: 2,
-    },
-    {
-      id: '2',
-      name: 'דוד כהן',
-      phone: '0509876543',
-      email: 'david@gmail.com',
-      totalVisits: 8,
-      totalSpent: 800,
-      lastVisit: '2024-01-18',
-      canceledAppointments: 0,
-    },
-  ]);
+  const [customers, setCustomers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [filteredCustomers, setFilteredCustomers] = useState([]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredCustomers(customers);
+    } else {
+      const filtered = customers.filter(customer => 
+        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customer.phone.includes(searchQuery) ||
+        customer.email.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredCustomers(filtered);
+    }
+  }, [searchQuery, customers]);
+
+  const fetchCustomers = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Fetch all appointments for this business
+      const appointmentsQuery = firestore().collection('appointments').where('businessId', '==', businessId);
+      const appointmentsSnap = await appointmentsQuery.get();
+      const appointments = appointmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Get unique customer IDs
+      const customerIds = [...new Set(appointments.map(app => app.customerId))];
+
+      // Fetch customer details
+      const customersData = [];
+      for (const customerId of customerIds) {
+        const customerQuery = firestore().collection('users').where('id', '==', customerId);
+        const customerSnap = await customerQuery.get();
+        if (!customerSnap.empty) {
+          const customerData = customerSnap.docs[0].data();
+          
+          // Calculate customer statistics
+          const customerAppointments = appointments.filter(app => app.customerId === customerId);
+          const totalVisits = customerAppointments.filter(app => app.status === 'completed').length;
+          const totalSpent = customerAppointments
+            .filter(app => app.status === 'completed')
+            .reduce((sum, app) => sum + (app.price || 0), 0);
+          const canceledAppointments = customerAppointments.filter(app => app.status === 'canceled').length;
+          const lastVisit = customerAppointments
+            .filter(app => app.status === 'completed')
+            .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.date || null;
+
+          customersData.push({
+            id: customerId,
+            name: customerData.name || 'לקוח לא ידוע',
+            phone: customerData.phone || '',
+            email: customerData.email || '',
+            totalVisits,
+            totalSpent,
+            lastVisit,
+            canceledAppointments
+          });
+        }
+      }
+
+      // Sort customers by total spent (highest first)
+      customersData.sort((a, b) => b.totalSpent - a.totalSpent);
+      
+      setCustomers(customersData);
+      setFilteredCustomers(customersData);
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleCall = (phone) => {
     Linking.openURL(`tel:${phone}`);
@@ -135,10 +191,13 @@ const BusinessCustomers = ({ navigation, route }) => {
     </View>
   );
 
-  const filteredCustomers = customers.filter(customer =>
-    customer.name.includes(searchQuery) || 
-    customer.phone.includes(searchQuery)
-  );
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator size="large" color={Color.primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>

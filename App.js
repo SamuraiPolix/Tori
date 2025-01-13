@@ -17,6 +17,7 @@ import Login from "./src/screens/auth/Login";
 import Signup from "./src/screens/auth/Signup";
 import Verification from "./src/screens/auth/Verification";
 import Resetpass from "./src/screens/auth/Resetpass";
+import AdminPanel from './src/screens/auth/AdminPanel';
 
 // Main Screen
 import Home from "./src/screens/Home";
@@ -31,14 +32,24 @@ import BusinessSignup from "./src/screens/business/BusinessSignup";
 import BusinessProfileSetup from "./src/screens/business/BusinessProfileSetup";
 import BusinessServicesSetup from "./src/screens/business/BusinessServicesSetup";
 import BusinessScheduleSetup from "./src/screens/business/BusinessScheduleSetup";
+import BusinessLogin from './src/screens/business/BusinessLogin';
 
 // Appointment Screens
 import NewAppointment from "./src/screens/appointments/NewAppointment";
 import EditAppointment from "./src/screens/appointments/EditAppointment";
+import RescheduleAppointment from "./src/screens/RescheduleAppointment";
 
 // Customer Screens
 import CustomerDetails from "./src/screens/customers/CustomerDetails";
 import EditCustomer from "./src/screens/customers/EditCustomer";
+
+// Other Screens
+import Profile from './src/screens/Profile';
+import MyAppointments from './src/screens/MyAppointments';
+import Saved from './src/screens/Saved';
+import PersonalDetails from './src/screens/PersonalDetails';
+import NotificationSettings from './src/screens/NotificationSettings';
+import About from './src/screens/About';
 
 // Components
 import BusinessSidebar from "./src/components/BusinessSidebar";
@@ -73,6 +84,21 @@ const AppNavigator = () => {
       <Stack.Screen name="Signup" component={Signup} />
       <Stack.Screen name="Verification" component={Verification} />
       <Stack.Screen name="Resetpass" component={Resetpass} />
+      <Stack.Screen 
+        name="AdminPanel" 
+        component={AdminPanel} 
+        options={{
+          presentation: 'modal',
+          headerShown: true,
+          title: 'Admin Panel',
+          headerStyle: {
+            backgroundColor: '#E3F2FD',
+          },
+          headerTitleStyle: {
+            fontFamily: "Assistant-SemiBold",
+          },
+        }}
+      />
 
       {/* Main Screen */}
       <Stack.Screen name="Home" component={Home} />
@@ -87,10 +113,18 @@ const AppNavigator = () => {
       <Stack.Screen name="BusinessProfileSetup" component={BusinessProfileSetup} />
       <Stack.Screen name="BusinessServicesSetup" component={BusinessServicesSetup} />
       <Stack.Screen name="BusinessScheduleSetup" component={BusinessScheduleSetup} />
+      <Stack.Screen
+        name="BusinessLogin"
+        component={BusinessLogin}
+        options={{
+          headerShown: false,
+        }}
+      />
 
       {/* Appointment Screens */}
       <Stack.Screen name="NewAppointment" component={NewAppointment} />
       <Stack.Screen name="EditAppointment" component={EditAppointment} />
+      <Stack.Screen name="RescheduleAppointment" component={RescheduleAppointment} />
 
       {/* Customer Screens */}
       <Stack.Screen name="CustomerDetails" component={CustomerDetails} />
@@ -98,6 +132,20 @@ const AppNavigator = () => {
 
       {/* Other Screens */}
       <Stack.Screen name="SalonDetails" component={SalonDetails} />
+      <Stack.Screen name="Profile" component={Profile} options={{ headerShown: false }} />
+      <Stack.Screen name="MyAppointments" component={MyAppointments} options={{ headerShown: false }} />
+      <Stack.Screen name="Saved" component={Saved} options={{ headerShown: false }} />
+      <Stack.Screen name="PersonalDetails" component={PersonalDetails} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="NotificationSettings"
+        component={NotificationSettings}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="About"
+        component={About}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 };

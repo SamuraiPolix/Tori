@@ -43,34 +43,20 @@ const BusinessSidebar = ({
   }, [isVisible]);
 
   const handleNavigation = (screen) => {
-    // סגירת התפריט עם אנימציה לפני הניווט
-    Animated.timing(slideAnim, {
-      toValue: SIDEBAR_WIDTH,
-      duration: 250,
-      easing: Easing.bezier(0.2, 1, 0.2, 1),
-      useNativeDriver: true,
-    }).start(() => {
-      onClose();
-      if (screen !== currentScreen) {
-        navigation.navigate(screen, { businessData });
-      }
-    });
+    onClose(); // סוגר את התפריט לפני הניווט
+    navigation.navigate(screen, { businessData });
   };
 
   const handleLogout = () => {
-    // Close sidebar with animation
-    Animated.timing(slideAnim, {
-      toValue: SIDEBAR_WIDTH,
-      duration: 250,
-      easing: Easing.bezier(0.2, 1, 0.2, 1),
-      useNativeDriver: true,
-    }).start(() => {
-      onClose();
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
+    onClose();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Welcome' }],
     });
+  };
+
+  const handleClose = () => {
+    onClose();
   };
 
   const menuItems = [
@@ -114,7 +100,7 @@ const BusinessSidebar = ({
           activeOpacity={1}
           onPress={onClose}
         >
-          <View />
+          <View style={StyleSheet.absoluteFill} />
         </TouchableOpacity>
       )}
       <Animated.View
@@ -122,13 +108,15 @@ const BusinessSidebar = ({
           styles.sidebar,
           {
             transform: [{ translateX: slideAnim }],
+            opacity: isVisible ? 1 : 0,
+            pointerEvents: isVisible ? 'auto' : 'none',
           }
         ]}
       >
         <View style={styles.header}>
           <TouchableOpacity 
             style={styles.closeButton}
-            onPress={onClose}
+            onPress={handleClose}
           >
             <Text style={styles.closeButtonText}>❮</Text>
           </TouchableOpacity>
@@ -155,10 +143,7 @@ const BusinessSidebar = ({
                 ]}>
                   {item.name}
                 </Text>
-                <Text style={[
-                  styles.menuIcon,
-                  currentScreen === item.screen && styles.activeMenuIcon
-                ]}>
+                <Text style={styles.emojiIcon}>
                   {item.emoji}
                 </Text>
               </TouchableOpacity>
@@ -194,148 +179,130 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 998,
   },
   sidebar: {
     position: 'absolute',
     top: 0,
+    bottom: 0,
     right: 0,
     width: SIDEBAR_WIDTH,
-    height: '100%',
-    backgroundColor: '#F8FAFC',
-    paddingTop: 50,
+    backgroundColor: '#fff',
     zIndex: 999,
-    elevation: 5,
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
     shadowColor: '#000',
-    shadowOffset: { width: -2, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
+    shadowOffset: {
+      width: -2,
+      height: 0,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
   },
   header: {
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    backgroundColor: '#EFF6FF',
-  },
-  welcomeText: {
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#64748B',
-    marginBottom: 8,
-    textAlign: 'right',
-  },
-  businessInfo: {
-    alignItems: 'flex-end',
-    marginBottom: 10,
-  },
-  businessName: {
-    fontSize: 24,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  ownerName: {
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#64748B',
+    borderBottomColor: '#e2e8f0',
   },
   closeButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 1,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3B82F6',
-    borderRadius: 16,
+    alignSelf: 'flex-start',
+    padding: 8,
+    marginBottom: 16,
   },
   closeButtonText: {
     fontSize: 24,
-    color: '#fff',
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.assistantRegular,
+  },
+  businessInfo: {
+    alignItems: 'flex-end',
+  },
+  welcomeText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 4,
+    fontFamily: FontFamily.assistantRegular,
+  },
+  businessName: {
+    fontSize: 20,
+    color: Color.primaryColorAmaranthPurple,
+    marginBottom: 4,
+    fontFamily: FontFamily.assistantBold,
+  },
+  ownerName: {
+    fontSize: 16,
+    color: '#64748b',
+    fontFamily: FontFamily.assistantRegular,
   },
   menuItems: {
-    paddingTop: 16,
+    flex: 1,
+    padding: 16,
   },
   menuItem: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginHorizontal: 12,
-    marginVertical: 4,
+    padding: 12,
+    borderRadius: 8,
   },
   activeMenuItem: {
-    backgroundColor: '#EFF6FF',
-  },
-  menuIcon: {
-    fontSize: 24,
-    marginLeft: 15,
-    color: '#64748B',
-  },
-  activeMenuIcon: {
-    color: '#2563EB',
+    backgroundColor: Color.primaryColorAmaranthPurple + '10',
   },
   menuText: {
-    flex: 1,
     fontSize: 16,
-    fontFamily: FontFamily["Assistant-SemiBold"],
-    color: '#64748B',
-    textAlign: 'right',
+    color: '#1e293b',
+    marginRight: 12,
+    fontFamily: FontFamily.assistantRegular,
   },
   activeMenuText: {
-    color: '#2563EB',
-    fontFamily: FontFamily["Assistant-Bold"],
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.assistantBold,
+  },
+  emojiIcon: {
+    fontSize: 20,
+    width: 24,
+    textAlign: 'center',
   },
   divider: {
     height: 1,
-    backgroundColor: '#E2E8F0',
-    marginHorizontal: 16,
-    opacity: 0.6,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 8,
   },
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    width: '100%',
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#e2e8f0',
   },
   logoutContainer: {
-    alignItems: 'center',
     marginBottom: 16,
   },
   logoutButton: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    padding: 12,
     borderRadius: 8,
-    width: 'auto',
-    minWidth: 120,
+    backgroundColor: '#fee2e2',
   },
   logoutText: {
     fontSize: 16,
-    fontFamily: FontFamily["Assistant-SemiBold"],
-    color: '#EF4444',
-    textAlign: 'right',
-    marginLeft: 8,
+    color: '#ef4444',
+    marginRight: 12,
+    fontFamily: FontFamily.assistantRegular,
   },
   logoutIcon: {
-    fontSize: 18,
-    color: '#EF4444',
+    fontSize: 20,
+    width: 24,
+    textAlign: 'center',
   },
   footerText: {
-    fontSize: 14,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#94A3B8',
+    fontSize: 12,
+    color: '#94a3b8',
     textAlign: 'center',
-    marginTop: 8,
-  },
+    fontFamily: FontFamily.assistantRegular,
+  }
 });
 
 export default BusinessSidebar;

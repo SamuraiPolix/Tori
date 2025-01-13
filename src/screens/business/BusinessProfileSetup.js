@@ -8,10 +8,13 @@ import {
   StyleSheet,
   SafeAreaView,
   Image,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Color, FontFamily } from '../../styles/GlobalStyles';
 import * as ImagePicker from 'expo-image-picker';
+import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 
 const BusinessProfileSetup = ({ navigation, route }) => {
   const { businessData } = route.params;
@@ -43,10 +46,25 @@ const BusinessProfileSetup = ({ navigation, route }) => {
     }));
   };
 
-  const handleNext = () => {
-    navigation.navigate('BusinessScheduleSetup', {
-      businessData: { ...businessData, ...profileData }
-    });
+  const handleNext = async () => {
+    try {
+      // שמירת נתוני הפרופיל ב-Firestore
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          about: profileData.about,
+          images: profileData.images,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      navigation.navigate('BusinessScheduleSetup', {
+        businessData: { ...businessData, ...profileData }
+      });
+    } catch (error) {
+      console.error('Error saving profile data:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת נתוני הפרופיל');
+    }
   };
 
   const handleBack = () => {

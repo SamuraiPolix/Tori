@@ -1,7 +1,11 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, I18nManager } from 'react-native';
 import { Image } from "expo-image";
 import { FontFamily, Color } from "../../styles/GlobalStyles";
+
+// Force RTL
+I18nManager.allowRTL(true);
+I18nManager.forceRTL(true);
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -13,22 +17,16 @@ const navigationItems = [
     label: 'בית'
   },
   {
+    id: 'appointments',
+    icon: require('../../assets/ic--calendar.png'),
+    activeIcon: require('../../assets/ic--calendar.png'),
+    label: 'התורים שלי'
+  },
+  {
     id: 'saved',
     icon: require('../../assets/ic--save.png'),
     activeIcon: require('../../assets/ic--save.png'),
-    label: 'שמורים'
-  },
-  {
-    id: 'map',
-    icon: require('../../assets/ic--location1.png'),
-    activeIcon: require('../../assets/ic--location1.png'),
-    label: 'מפה'
-  },
-  {
-    id: 'messages',
-    icon: require('../../assets/ic--chat.png'),
-    activeIcon: require('../../assets/ic--chat.png'),
-    label: 'הודעות'
+    label: 'מועדפים'
   },
   {
     id: 'profile',
