@@ -437,14 +437,10 @@ const SalonDetails = ({ route }) => {
 
         // Create the appointment within the transaction
         transaction.set(appointmentRef, {
-          id: appointmentId,
           businessId: businessId,
-          customerId: user.uid,
+          customerId: auth().currentUser.uid,
           serviceId: businessService.id,
-          serviceName: businessService.name,
           startTime: selectedTime.time,
-          duration: serviceDuration,
-          price: businessService.price || 0,
           status: 'pending',
           notes: null,
           createdAt: firestore.Timestamp.now(),
@@ -461,11 +457,8 @@ const SalonDetails = ({ route }) => {
         transaction.set(userAppointmentRef, {
           appointmentId: appointmentId,
           businessId: businessId,
-          serviceName: businessService.name,
           serviceId: businessService.id,
           startTime: selectedTime.time,
-          duration: serviceDuration,
-          price: businessService.price || 0,
           status: 'pending',
           createdAt: firestore.Timestamp.now()
         });
