@@ -15,13 +15,40 @@ const LocationPicker = ({ onLocationSelected }) => {
 
   useEffect(() => {
     (async () => {
-      // Get initial location (Tel Aviv as default)
-      setMapRegion({
-        latitude: 32.0853,
-        longitude: 34.7818,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
-      });
+      try {
+        // Request location permissions
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        
+        if (status !== 'granted') {
+          console.log('Location permission denied');
+          // Set default location (Tel Aviv) if permission denied
+          setMapRegion({
+            latitude: 32.0853,
+            longitude: 34.7818,
+            latitudeDelta: 0.0922,
+            longitudeDelta: 0.0421,
+          });
+          return;
+        }
+
+        // Get current location if permission granted
+        const location = await Location.getCurrentPositionAsync({});
+        setMapRegion({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        });
+      } catch (error) {
+        console.error('Error getting location:', error);
+        // Set default location (Tel Aviv) on error
+        setMapRegion({
+          latitude: 32.0853,
+          longitude: 34.7818,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        });
+      }
     })();
   }, []);
 
@@ -34,6 +61,17 @@ const LocationPicker = ({ onLocationSelected }) => {
 
     try {
       setLoading(true);
+      
+      // Check permissions before geocoding
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+        if (newStatus !== 'granted') {
+          console.log('Location permission denied');
+          return;
+        }
+      }
+
       // Add "Israel" to the search query to improve results
       const results = await Location.geocodeAsync(text + ", Israel");
       if (results.length > 0) {

@@ -157,19 +157,72 @@ const Frame = ({ navigation }) => {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      const googleCredential = auth.GoogleAuthProvider.credential(userInfo.idToken);
-      const userCredential = await auth().signInWithCredential(googleCredential);
       
-      // Check if this is the first sign in
-      if (userCredential.additionalUserInfo?.isNewUser) {
-        setEmail(userInfo.user.email);
-        setShowNamePrompt(true);
+      // Make sure Google Play Services are available
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      
+      // Sign in with Google
+      const userInfo = await GoogleSignin.signIn();
+      console.log('Google Sign-In Success:', userInfo);
+
+      if (!userInfo?.data?.idToken) {
+        throw new Error('Failed to get ID token from Google Sign-In');
       }
+
+      // Create a Google credential with the token
+      const googleCredential = auth.GoogleAuthProvider.credential(userInfo.data.idToken);
+      
+      // Sign in to Firebase with the Google credential
+      const userCredential = await auth().signInWithCredential(googleCredential);
+      const user = userCredential.user;
+      console.log('Firebase Auth Success:', user.uid);
+
+      // Get user document from Firestore
+      const userDocRef = firestore().collection('users').doc(user.uid);
+      const userDoc = await userDocRef.get();
+
+      // Prepare user data
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        name: user.displayName || userInfo.data.user.name || '',
+        phoneNumber: user.phoneNumber || null,
+        updatedAt: firestore.Timestamp.now(),
+        lastLogin: firestore.Timestamp.now(),
+        photoURL: user.photoURL || userInfo.data.user.photo || null,
+      };
+
+      if (!userDoc.exists) {
+        // Create new user document if it doesn't exist
+        userData.createdAt = firestore.Timestamp.now();
+        await userDocRef.set(userData);
+      } else {
+        // Update existing user document
+        await userDocRef.update(userData);
+      }
+
+      // Store user data locally
+      await storeUserData(userData);
+
+      // Navigate to Home screen
+      navigation.navigate('Home');
     } catch (error) {
       console.error('Google Sign-In Error:', error);
-      Alert.alert('שגיאה', 'אירעה שגיאה בהתחברות עם Google');
+      let errorMessage = 'אירעה שגיאה בהתחברות עם Google';
+      
+      if (error.code === 'firestore/not-found') {
+        errorMessage = 'שגיאה ביצירת משתמש חדש';
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.toString().includes('SIGN_IN_CANCELLED')) {
+        errorMessage = 'ההתחברות בוטלה';
+      } else if (error?.toString().includes('PLAY_SERVICES_NOT_AVAILABLE')) {
+        errorMessage = 'שירותי Google Play אינם זמינים';
+      }
+      
+      Alert.alert('שגיאה', errorMessage);
     } finally {
       setIsLoading(false);
     }

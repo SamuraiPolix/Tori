@@ -9,10 +9,13 @@ import {
   TextInput,
   Linking,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
+import BusinessSidebar from '../../components/BusinessSidebar';
 
 const getDayName = (dateString) => {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -20,20 +23,22 @@ const getDayName = (dateString) => {
   return days[date.getDay()];
 };
 
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
+const formatDate = (date) => {
+  if (!date) return 'אין ביקורים';
   return `${date.getDate()}/${date.getMonth() + 1}`;
 };
 
-const BusinessCustomers = ({ navigation, route }) => {
-  const { businessId } = route.params;
+const BusinessCustomers = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filteredCustomers, setFilteredCustomers] = useState([]);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [businessData, setBusinessData] = useState({});
 
   useEffect(() => {
     fetchCustomers();
+    fetchBusinessData();
   }, []);
 
   useEffect(() => {
@@ -41,9 +46,8 @@ const BusinessCustomers = ({ navigation, route }) => {
       setFilteredCustomers(customers);
     } else {
       const filtered = customers.filter(customer => 
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        customer.phone.includes(searchQuery) ||
-        customer.email.toLowerCase().includes(searchQuery.toLowerCase())
+        (customer.name + ' ' + customer.phone).toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customer.phone?.includes(searchQuery)
       );
       setFilteredCustomers(filtered);
     }
@@ -51,57 +55,188 @@ const BusinessCustomers = ({ navigation, route }) => {
 
   const fetchCustomers = async () => {
     try {
-      setIsLoading(true);
-      
-      // Fetch all appointments for this business
-      const appointmentsQuery = firestore().collection('appointments').where('businessId', '==', businessId);
-      const appointmentsSnap = await appointmentsQuery.get();
-      const appointments = appointmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const businessId = auth().currentUser.uid;
+      console.log('Fetching customers for business:', businessId);
 
-      // Get unique customer IDs
-      const customerIds = [...new Set(appointments.map(app => app.customerId))];
+      // מביא את כל התורים של העסק
+      const appointmentsSnapshot = await firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .get();
 
-      // Fetch customer details
-      const customersData = [];
-      for (const customerId of customerIds) {
-        const customerQuery = firestore().collection('users').where('id', '==', customerId);
-        const customerSnap = await customerQuery.get();
-        if (!customerSnap.empty) {
-          const customerData = customerSnap.docs[0].data();
+      // אוסף את כל מזהי הלקוחות הייחודיים
+      const customerIds = new Set();
+      const customerAppointmentsMap = new Map(); // מפה לשמירת התורים לפי לקוח
+      const appointmentsToProcess = []; // Array to store appointments that need service details
+
+      // מעבר על כל התורים וארגון לפי לקוח
+      appointmentsSnapshot.forEach(doc => {
+        const appointment = {
+          id: doc.id,
+          ...doc.data()
+        };
+        const customerId = appointment.customerId;
+        
+        if (customerId) {
+          customerIds.add(customerId);
           
-          // Calculate customer statistics
-          const customerAppointments = appointments.filter(app => app.customerId === customerId);
-          const totalVisits = customerAppointments.filter(app => app.status === 'completed').length;
-          const totalSpent = customerAppointments
-            .filter(app => app.status === 'completed')
-            .reduce((sum, app) => sum + (app.price || 0), 0);
-          const canceledAppointments = customerAppointments.filter(app => app.status === 'canceled').length;
-          const lastVisit = customerAppointments
-            .filter(app => app.status === 'completed')
-            .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.date || null;
+          // מוסיף את התור למערך התורים של הלקוח
+          if (!customerAppointmentsMap.has(customerId)) {
+            customerAppointmentsMap.set(customerId, []);
+          }
+          customerAppointmentsMap.get(customerId).push(appointment);
+          
+          // Add to processing queue if it has service info
+          if (appointment.serviceId && appointment.businessId) {
+            appointmentsToProcess.push(appointment);
+          }
+        }
+      });
 
-          customersData.push({
+      // Process all services in parallel
+      await Promise.all(
+        appointmentsToProcess.map(async (appointment) => {
+          try {
+            const businessDoc = await firestore()
+              .collection('businesses')
+              .doc(appointment.businessId)
+              .get();
+            
+            if (businessDoc.exists) {
+              const businessData = businessDoc.data();
+              const businessServices = businessData.services || {};
+              const service = businessServices[appointment.serviceId];
+              
+              if (service) {
+                appointment.service = {
+                  id: appointment.serviceId,
+                  name: service.name || 'שם שירות לא זמין',
+                  duration: parseInt(service.duration) || 0,
+                  price: parseInt(service.price) || 0
+                };
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching service details:', error);
+          }
+        })
+      );
+
+      console.log('Found unique customers:', customerIds.size);
+
+      // מביא את המידע על כל הלקוחות
+      const customersData = await Promise.all(
+        Array.from(customerIds).map(async (customerId) => {
+          // מביא את פרטי הלקוח
+          const customerDoc = await firestore()
+            .collection('users')
+            .doc(customerId)
+            .get();
+
+          if (!customerDoc.exists) {
+            console.log('Customer document does not exist:', customerId);
+            return null;
+          }
+
+          const customerData = customerDoc.data();
+          console.log('Customer data from Firestore:', customerData);
+
+          // בדיקת השדות הנדרשים
+          if (!customerData) {
+            console.log('No customer data found for:', customerId);
+            return null;
+          }
+
+          const fullName = customerData.name || `${customerData.firstName || ''} ${customerData.lastName || ''}`.trim();
+          console.log('Constructed full name:', fullName);
+
+          // מקבל את התורים של הלקוח מהמפה
+          const appointments = customerAppointmentsMap.get(customerId) || [];
+          
+          // מיין תורים לפי תאריך (החדש ביותר קודם)
+          appointments.sort((a, b) => {
+            const dateA = a.startTime ? new Date(a.startTime.seconds * 1000) : new Date(0);
+            const dateB = b.startTime ? new Date(b.startTime.seconds * 1000) : new Date(0);
+            return dateB - dateA;
+          });
+
+          // חישוב סטטיסטיקות
+          let totalSpent = 0;
+          let lastVisit = null;
+          let totalVisits = 0;
+          let canceledAppointments = 0;
+
+          appointments.forEach(appointment => {
+            if (appointment.status === 'completed') {
+              // חישוב סכום כולל
+              if (appointment.service?.price) {
+                totalSpent += Number(appointment.service.price);
+              }
+              
+              // ספירת ביקורים
+              totalVisits++;
+              
+              // עדכון ביקור אחרון
+              const visitDate = appointment.startTime ? new Date(appointment.startTime.seconds * 1000) : null;
+              if (visitDate && (!lastVisit || visitDate > lastVisit)) {
+                lastVisit = visitDate;
+              }
+            } else if (appointment.status === 'canceled') {
+              canceledAppointments++;
+            }
+          });
+
+          return {
             id: customerId,
-            name: customerData.name || 'לקוח לא ידוע',
-            phone: customerData.phone || '',
+            name: fullName || 'לקוח לא ידוע',
+            phone: customerData.phoneNumber || customerData.phone || 'מספר לא זמין',
             email: customerData.email || '',
             totalVisits,
             totalSpent,
             lastVisit,
-            canceledAppointments
-          });
-        }
-      }
+            canceledAppointments,
+            recentAppointments: appointments.slice(0, 10) // 10 התורים האחרונים
+          };
+        })
+      );
 
-      // Sort customers by total spent (highest first)
-      customersData.sort((a, b) => b.totalSpent - a.totalSpent);
-      
-      setCustomers(customersData);
-      setFilteredCustomers(customersData);
+      // מסנן לקוחות לא קיימים ומיין לפי סכום ההוצאות
+      const validCustomers = customersData
+        .filter(customer => customer !== null)
+        .sort((a, b) => b.totalSpent - a.totalSpent);
+
+      setCustomers(validCustomers);
+      setFilteredCustomers(validCustomers);
+      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching customers:', error);
-    } finally {
+      Alert.alert(
+        'שגיאה',
+        'אירעה שגיאה בטעינת רשימת הלקוחות. אנא נסה שוב.',
+        [{ text: 'אישור', style: 'default' }]
+      );
       setIsLoading(false);
+    }
+  };
+
+  const fetchBusinessData = async () => {
+    try {
+      const businessId = auth().currentUser?.uid;
+      if (!businessId) {
+        console.error('No business ID provided - user not logged in');
+        return;
+      }
+
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .get();
+
+      if (businessDoc.exists) {
+        setBusinessData(businessDoc.data());
+      }
+    } catch (error) {
+      console.error('Error fetching business data:', error);
     }
   };
 
@@ -136,12 +271,14 @@ const BusinessCustomers = ({ navigation, route }) => {
           >
             <FontAwesome5 name="phone" size={18} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.contactButton, styles.emailButton]}
-            onPress={() => handleEmail(item.email)}
-          >
-            <FontAwesome5 name="envelope" size={18} color="#fff" />
-          </TouchableOpacity>
+          {item.email && (
+            <TouchableOpacity 
+              style={[styles.contactButton, styles.emailButton]}
+              onPress={() => handleEmail(item.email)}
+            >
+              <FontAwesome5 name="envelope" size={18} color="#fff" />
+            </TouchableOpacity>
+          )}
         </View>
         <View>
           <Text style={styles.customerName}>👤 {item.name}</Text>
@@ -156,8 +293,14 @@ const BusinessCustomers = ({ navigation, route }) => {
         </View>
         <View style={styles.statItem}>
           <View style={styles.dateContainer}>
-            <Text style={styles.statValue}>{formatDate(item.lastVisit)}</Text>
-            <Text style={styles.dayName}>יום {getDayName(item.lastVisit)}</Text>
+            {item.lastVisit ? (
+              <>
+                <Text style={styles.statValue}>{formatDate(item.lastVisit)}</Text>
+                <Text style={styles.dayName}>יום {getDayName(item.lastVisit)}</Text>
+              </>
+            ) : (
+              <Text style={styles.statValue}>אין ביקורים</Text>
+            )}
           </View>
           <Text style={styles.statLabel}>🕒 ביקור אחרון</Text>
         </View>
@@ -201,14 +344,30 @@ const BusinessCustomers = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <BusinessSidebar
+        isVisible={showSidebar}
+        onClose={() => setShowSidebar(false)}
+        navigation={navigation}
+        businessData={businessData}
+        currentScreen="BusinessCustomers"
+      />
+
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={Color.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>👥 לקוחות</Text>
-        <TouchableOpacity>
-          <Ionicons name="add" size={24} color={Color.primary} />
-        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={Color.primaryColorAmaranthPurple} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>לקוחות</Text>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setShowSidebar(true)}
+          >
+            <Ionicons name="menu-outline" size={24} color={Color.primaryColorAmaranthPurple} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {renderSearchBar()}
@@ -231,26 +390,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f2f5',
+    paddingTop: Platform.OS === 'android' ? 40 : 20,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
+    height: 60,
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: '#e0e0e0',
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  headerContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
   headerTitle: {
+    flex: 1,
     fontSize: 20,
-    fontWeight: 'bold',
-    color: Color.primary,
-    fontFamily: FontFamily.primary,
+    fontFamily: FontFamily.rubikMedium,
+    color: Color.primaryColorAmaranthPurple,
+    textAlign: 'center',
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: 8,
+    width: 40,
+    alignItems: 'center',
   },
   summaryContainer: {
     backgroundColor: '#fff',

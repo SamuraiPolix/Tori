@@ -15,7 +15,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.Tori",
-      "googleServicesFile": "./src/services/GoogleService-Info.plist"
+      "googleServicesFile": "./src/services/GoogleService-Info.plist",
+      "config": {
+        "googleMapsApiKey": "AIzaSyA3PAZ_AoOXWkTfRJxLN7kcktogbGoYjPk"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +26,12 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.anonymous.Tori",
-      "googleServicesFile": "./src/services/google-services.json"
+      "googleServicesFile": "./src/services/google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyA3PAZ_AoOXWkTfRJxLN7kcktogbGoYjPk"
+        }
+      }
     },
     "web": {
       "favicon": "./src/assets/favicon.png"

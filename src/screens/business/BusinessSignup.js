@@ -18,7 +18,6 @@ import { FontFamily, Color } from "../../styles/GlobalStyles";
 import { Ionicons } from '@expo/vector-icons';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
-import LocationPicker from '../../components/location/LocationPicker';
 
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
@@ -48,8 +47,6 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     password: '',
     confirmPassword: '', 
   });
-
-  const [location, setLocation] = React.useState(null);
 
   const [showCategoryPicker, setShowCategoryPicker] = React.useState(false);
   const [tempSelectedCategories, setTempSelectedCategories] = React.useState([]);
@@ -96,15 +93,6 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     }
     
     setShowCategoryPicker(false);
-  };
-
-  const handleLocationSelected = (locationData) => {
-    console.log('Selected location:', locationData);
-    setLocation(locationData);
-    setFormData(prev => ({
-      ...prev,
-      address: locationData.address
-    }));
   };
 
   const validateForm = () => {
@@ -185,11 +173,6 @@ const BusinessSignupScreen = ({ navigation, route }) => {
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
-    if (!location || !location.coordinates) {
-      Alert.alert('שגיאה', 'נא לבחור מיקום תקין');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       // יצירת משתמש חדש עם Firebase Auth
@@ -205,10 +188,6 @@ const BusinessSignupScreen = ({ navigation, route }) => {
         businessPhone: formData.businessPhone,
         email: formData.email,
         address: formData.address,
-        location: {
-          latitude: location.coordinates.latitude,
-          longitude: location.coordinates.longitude
-        },
         categories: formData.selectedCategories,
         description: '',
         images: [],
@@ -397,12 +376,14 @@ const BusinessSignupScreen = ({ navigation, route }) => {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>📍 כתובת העסק</Text>
-              <LocationPicker onLocationSelected={handleLocationSelected} />
-              {location && (
-                <Text style={styles.selectedAddress}>
-                  כתובת נבחרה: {location.address}
-                </Text>
-              )}
+              <TextInput
+                style={[styles.input, errors.address && styles.inputError]}
+                value={formData.address}
+                onChangeText={(text) => handleInputChange('address', text)}
+                placeholder="הכנס את כתובת העסק המלאה"
+                placeholderTextColor="#9ca3af"
+              />
+              {renderError('address')}
             </View>
 
             <View style={styles.inputContainer}>
@@ -747,12 +728,6 @@ const styles = StyleSheet.create({
   },
   modalButtonTextCancel: {
     color: '#64748b',
-  },
-  selectedAddress: {
-    marginTop: 8,
-    color: Color.primaryColorAmaranthPurple,
-    fontFamily: FontFamily.assistant,
-    textAlign: 'right',
   },
 });
 

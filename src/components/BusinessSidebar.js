@@ -44,7 +44,10 @@ const BusinessSidebar = ({
 
   const handleNavigation = (screen) => {
     onClose(); // סוגר את התפריט לפני הניווט
-    navigation.navigate(screen, { businessData });
+    navigation.navigate(screen, { 
+      businessId: businessData.id,
+      businessData 
+    });
   };
 
   const handleLogout = () => {

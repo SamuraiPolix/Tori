@@ -58,7 +58,8 @@ const BusinessProfileSetup = ({ navigation, route }) => {
           updatedAt: firestore.FieldValue.serverTimestamp()
         });
 
-      navigation.navigate('BusinessScheduleSetup', {
+      navigation.navigate('BusinessServicesSetup', {
+        businessId: auth().currentUser.uid,
         businessData: { ...businessData, ...profileData }
       });
     } catch (error) {
@@ -146,6 +147,7 @@ const BusinessProfileSetup = ({ navigation, route }) => {
           <TouchableOpacity
             style={styles.skipButton}
             onPress={() => navigation.navigate('BusinessScheduleSetup', {
+              businessId: auth().currentUser.uid,
               businessData: { ...businessData, about: '', images: [] }
             })}
           >

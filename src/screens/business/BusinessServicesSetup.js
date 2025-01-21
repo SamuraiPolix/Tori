@@ -38,7 +38,7 @@ export default function BusinessServicesSetup({ navigation, route }) {
 
         if (businessDoc.exists) {
           const data = businessDoc.data();
-          if (data.services && data.services.length > 0) {
+          if (data.services && Array.isArray(data.services)) {
             setServices(data.services);
           }
         }
@@ -66,7 +66,10 @@ export default function BusinessServicesSetup({ navigation, route }) {
         });
 
       Alert.alert('הצלחה', 'השירותים נשמרו בהצלחה');
-      navigation.navigate('BusinessProfileSetup', { businessData });
+      navigation.navigate('BusinessScheduleSetup', { 
+        businessId: auth().currentUser.uid,
+        businessData: { ...businessData, services }
+      });
     } catch (error) {
       console.error('Error saving services:', error);
       Alert.alert('שגיאה', 'אירעה שגיאה בשמירת השירותים');
@@ -75,24 +78,41 @@ export default function BusinessServicesSetup({ navigation, route }) {
     }
   };
 
-  const addService = () => {
+  const addService = async () => {
     if (!newService.name || !newService.price || !newService.duration) {
       Alert.alert('שגיאה', 'נא למלא את כל השדות');
       return;
     }
     
-    const updatedServices = [
-      ...services,
-      { 
-        ...newService, 
-        id: Date.now().toString(),
-        price: parseFloat(newService.price),
-        duration: parseInt(newService.duration)
-      }
-    ];
+    const newServiceItem = { 
+      ...newService, 
+      id: Date.now().toString(),
+      price: parseFloat(newService.price),
+      duration: parseInt(newService.duration)
+    };
     
-    setServices(updatedServices);
-    setNewService({ name: '', price: '', duration: '30' });
+    const updatedServices = [...services, newServiceItem];
+    
+    try {
+      setSaving(true);
+      // Save to Firestore immediately
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          services: updatedServices,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+      
+      setServices(updatedServices);
+      setNewService({ name: '', price: '', duration: '30' });
+      Alert.alert('הצלחה', 'השירות נוסף בהצלחה');
+    } catch (error) {
+      console.error('Error adding service:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בהוספת השירות');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDeleteService = (service) => {
@@ -100,11 +120,29 @@ export default function BusinessServicesSetup({ navigation, route }) {
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    if (serviceToDelete) {
-      setServices(services.filter(service => service.id !== serviceToDelete.id));
+  const confirmDelete = async () => {
+    try {
+      setSaving(true);
+      const updatedServices = services.filter(s => s.id !== serviceToDelete.id);
+      
+      // Save to Firestore immediately
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          services: updatedServices,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      setServices(updatedServices);
       setShowDeleteModal(false);
       setServiceToDelete(null);
+      Alert.alert('הצלחה', 'השירות נמחק בהצלחה');
+    } catch (error) {
+      console.error('Error deleting service:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה במחיקת השירות');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -113,13 +151,35 @@ export default function BusinessServicesSetup({ navigation, route }) {
     setShowEditModal(true);
   };
 
-  const confirmEdit = () => {
-    if (editingService) {
-      setServices(services.map(service => 
-        service.id === editingService.id ? editingService : service
-      ));
+  const confirmEdit = async () => {
+    try {
+      setSaving(true);
+      const updatedServices = services.map(s => 
+        s.id === editingService.id ? {
+          ...editingService,
+          price: parseFloat(editingService.price),
+          duration: parseInt(editingService.duration)
+        } : s
+      );
+
+      // Save to Firestore immediately
+      await firestore()
+        .collection('businesses')
+        .doc(auth().currentUser.uid)
+        .update({
+          services: updatedServices,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      setServices(updatedServices);
       setShowEditModal(false);
       setEditingService(null);
+      Alert.alert('הצלחה', 'השירות עודכן בהצלחה');
+    } catch (error) {
+      console.error('Error updating service:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בעדכון השירות');
+    } finally {
+      setSaving(false);
     }
   };
 
