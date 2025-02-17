@@ -125,8 +125,8 @@ const BusinessSidebar = ({
           </TouchableOpacity>
           <View style={styles.businessInfo}>
             <Text style={styles.welcomeText}>ברוכים הבאים! 👋</Text>
-            <Text style={styles.businessName}>{businessData.businessName}</Text>
-            <Text style={styles.ownerName}>{businessData.ownerName}</Text>
+            <Text style={styles.businessName}>{businessData?.name || 'העסק שלי'}</Text>
+            <Text style={styles.ownerName}>{businessData?.ownerName || ''}</Text>
           </View>
         </View>
         

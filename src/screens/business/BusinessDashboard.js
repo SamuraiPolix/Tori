@@ -121,31 +121,14 @@ const BusinessDashboard = ({ navigation, route }) => {
       console.log('Unique customer IDs:', Array.from(customerIds));
 
       // Fetch all customers data in one batch
-      const customersData = {};
-      if (customerIds.size > 0) {
-        const customerSnapshots = await Promise.all(
-          Array.from(customerIds).map(customerId =>
-            FirebaseApi.getCustomerData(customerId)
-          )
-        );
-
-        customerSnapshots.forEach(customerDoc => {
-          if (customerDoc.exists) {
-            console.log('Customer data found:', customerDoc.id, customerDoc.data());
-            customersData[customerDoc.id] = customerDoc.data();
-          }
-        });
-      }
+      console.log('Fetching customer data for IDs:', Array.from(customerIds));
+      const customersData = await FirebaseApi.getUsersData(Array.from(customerIds));
+      console.log('Fetched customers data:', customersData);
 
       // Process appointments and add customer data
       const processedAppointments = await Promise.all(appointments.map(async appointment => {
         console.log('------- Processing appointment -------');
-        console.log('Full appointment data:', {
-          id: appointment.id,
-          serviceId: appointment.serviceId,
-          businessId: appointment.businessId,
-          status: appointment.status
-        });
+        console.log('Full appointment data:', appointment);
         
         // Format date and time from startTime
         let formattedDate = 'תאריך לא זמין';
@@ -164,83 +147,50 @@ const BusinessDashboard = ({ navigation, route }) => {
           console.error('Error formatting date/time for appointment:', error);
         }
 
-        // Get service details
+        // Get service details from business data
         let service = null;
-        if (appointment.serviceId && appointment.businessId) {
-          try {
-            // Get business data from Firestore
-            console.log(`Fetching business data for ID: ${appointment.businessId}`);
-            const businessDoc = await FirebaseApi.getBusinessData(appointment.businessId);
-            
-            if (businessDoc.exists) {
-              const businessData = businessDoc.data();
-              console.log('Business data:', {
-                name: businessData.businessName,
-                hasServices: !!businessData.services,
-                serviceKeys: businessData.services ? Object.keys(businessData.services) : []
-              });
-              
-              const businessServices = businessData.services || {};
-              service = businessServices[appointment.serviceId];
-              
-              console.log('Service lookup:', {
-                lookingFor: appointment.serviceId,
-                found: !!service,
-                serviceDetails: service ? {
-                  name: service.name,
-                  duration: service.duration,
-                  price: service.price
-                } : null
-              });
-            } else {
-              console.log(`Business document not found for ID: ${appointment.businessId}`);
-            }
-          } catch (error) {
-            console.error('Error fetching service details:', error);
-            console.error('Error details:', {
-              message: error.message,
-              code: error.code
-            });
-          }
-        } else {
-          console.log('Missing required IDs:', { 
-            hasServiceId: !!appointment.serviceId, 
-            hasBusinessId: !!appointment.businessId 
-          });
+        if (businessData && businessData.services && appointment.serviceId) {
+          service = businessData.services[appointment.serviceId];
+          console.log('Service found:', service);
         }
 
         // Get customer data
         const customerData = customersData[appointment.customerId];
+        console.log('Customer data for appointment:', {
+          appointmentId: appointment.id,
+          customerId: appointment.customerId,
+          customerData
+        });
         
         const serviceDetails = service ? {
           id: appointment.serviceId,
-          name: service.name || 'שם שירות לא זמין',
-          duration: parseInt(service.duration) || 0,
-          price: parseInt(service.price) || 0
+          name: service.name,
+          duration: service.duration,
+          price: service.price
         } : {
           name: 'שירות לא זמין',
           duration: 0,
           price: 0
         };
 
-        console.log('Final processed appointment:', {
-          id: appointment.id,
-          status: appointment.status,
-          serviceDetails,
-          hasCustomerData: !!customerData
-        });
-        console.log('------- End processing appointment -------\n');
+        const userDetails = customerData ? {
+          name: customerData.name || 'לקוח לא ידוע',
+          phone: customerData.phone || 'מספר טלפון לא זמין',
+          email: customerData.email || 'אימייל לא זמין'
+        } : {
+          name: appointment.customerName || 'לקוח לא ידוע',
+          phone: appointment.customerPhone || 'מספר טלפון לא זמין',
+          email: 'אימייל לא זמין'
+        };
+
+        console.log('Processed customer details:', userDetails);
         
         return {
           ...appointment,
           formattedDate,
           time: formattedTime,
           service: serviceDetails,
-          userData: customerData ? {
-            name: customerData.name || customerData.fullName || 'לקוח לא ידוע',
-            phone: customerData.phone || customerData.phoneNumber || 'מספר טלפון לא זמין',
-            email: customerData.email || 'אימייל לא זמין'
-          } : null
+          userData: userDetails
         };
       }));
 
@@ -348,10 +298,7 @@ const BusinessDashboard = ({ navigation, route }) => {
       setIsLoading(true);
       console.log(`Updating appointment ${appointmentId} to status: ${newStatus}`);
 
-      const appointmentRef = FirebaseApi.getAppointmentRef(appointmentId);
-
-      // עדכון הסטטוס והתאריך עדכון
-      await FirebaseApi.updateAppointmentStatus(appointmentRef, newStatus);
+      await FirebaseApi.updateAppointmentStatus(appointmentId, newStatus);
 
       // הודעה למשתמש
       Alert.alert(

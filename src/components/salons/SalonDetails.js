@@ -264,6 +264,7 @@ const SalonDetails = ({ route }) => {
       setSelectedDate(date);
       setSelectedTime(null);
       setIsLoading(true);
+      setAvailableSlots([]); // Reset slots while loading
       
       const result = await findAvailableAppointments(businessId, date);
       if (result.error) {
@@ -271,10 +272,11 @@ const SalonDetails = ({ route }) => {
         return;
       }
       
-      setAvailableSlots(result.available);
+      setAvailableSlots(result.available || []); // Ensure we always set an array
     } catch (error) {
       console.error('Error in handleDateSelect:', error);
       Alert.alert('שגיאה', 'אירעה שגיאה בטעינת המועדים הזמינים');
+      setAvailableSlots([]); // Reset on error
     } finally {
       setIsLoading(false);
     }
@@ -283,6 +285,7 @@ const SalonDetails = ({ route }) => {
   const handleServiceSelect = async (service) => {
     setSelectedService(service);
     setSelectedTime(null);
+    setAvailableSlots([]); // Reset slots when service changes
     
     // If a date was already selected, refresh the available slots for the new service
     if (selectedDate) {
@@ -293,10 +296,11 @@ const SalonDetails = ({ route }) => {
           Alert.alert('שגיאה', result.error);
           return;
         }
-        setAvailableSlots(result.available);
+        setAvailableSlots(result.available || []); // Ensure we always set an array
       } catch (error) {
         console.error('Error refreshing available slots:', error);
         Alert.alert('שגיאה', 'אירעה שגיאה בטעינת המועדים הזמינים');
+        setAvailableSlots([]); // Reset on error
       } finally {
         setIsLoading(false);
       }
