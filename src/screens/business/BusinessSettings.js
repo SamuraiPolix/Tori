@@ -14,8 +14,7 @@ import {
   SafeAreaView
 } from 'react-native';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 import BusinessServicesSettings from './BusinessServicesSettings';
 import BusinessHoursSettings from './BusinessHoursSettings';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,13 +34,14 @@ export default function BusinessSettings({ navigation }) {
 
   const loadBusinessData = async () => {
     try {
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .get();
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
 
-      if (businessDoc.exists) {
-        const data = businessDoc.data();
+      const data = await FirebaseApi.getBusinessData(currentUser.uid);
+      if (data) {
         setBusinessData({
           name: data.name || '',
           phone: data.businessPhone || '',
@@ -71,20 +71,23 @@ export default function BusinessSettings({ navigation }) {
 
     setSaving(true);
     try {
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          name: businessData.name,
-          businessPhone: businessData.phone,
-          email: businessData.email,
-          address: businessData.address,
-          about: businessData.about,
-          workingHours: businessData.workHours,
-          services: businessData.services,
-          settings: businessData.settings,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
+      await FirebaseApi.updateBusinessProfile(currentUser.uid, {
+        name: businessData.name,
+        businessPhone: businessData.phone,
+        email: businessData.email,
+        address: businessData.address,
+        about: businessData.about,
+        workingHours: businessData.workHours,
+        services: businessData.services,
+        settings: businessData.settings,
+        updatedAt: FirebaseApi.getServerTimestamp()
+      });
 
       Alert.alert('✨ הצלחה', 'הגדרות העסק עודכנו בהצלחה');
     } catch (error) {
