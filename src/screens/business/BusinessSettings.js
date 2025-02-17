@@ -231,14 +231,14 @@ export default function BusinessSettings({ navigation }) {
     </ScrollView>
   );
 
-  if (loading || !businessData) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2196F3" />
-        <Text style={styles.loadingText}>טוען נתונים...</Text>
-      </View>
-    );
-  }
+  // if (loading || !businessData) {
+  //   return (
+  //     <View style={styles.loadingContainer}>
+  //       <ActivityIndicator size="large" color="#2196F3" />
+  //       <Text style={styles.loadingText}>טוען נתונים...</Text>
+  //     </View>
+  //   );
+  // }
 
   return (
     <SafeAreaView style={styles.container}>
