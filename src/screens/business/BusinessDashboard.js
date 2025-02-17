@@ -34,6 +34,7 @@ const BusinessDashboard = ({ navigation, route }) => {
 
   useEffect(() => {
     const loadBusinessData = async () => {
+      setIsLoading(false);
       try {
         const userId = auth().currentUser.uid;
         console.log('Current user ID:', userId);
@@ -81,6 +82,8 @@ const BusinessDashboard = ({ navigation, route }) => {
         };
       } catch (error) {
         console.error('Error setting up listeners:', error);
+      }
+      finally {
         setIsLoading(false);
       }
     };
@@ -399,16 +402,16 @@ const BusinessDashboard = ({ navigation, route }) => {
     }
   };
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Color.primaryColorAmaranthPurple} />
-          <Text style={styles.loadingText}>טוען נתונים...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // if (isLoading) {
+  //   return (
+  //     <SafeAreaView style={styles.container}>
+  //       <View style={styles.loadingContainer}>
+  //         <ActivityIndicator size="large" color={Color.primaryColorAmaranthPurple} />
+  //         <Text style={styles.loadingText}>טוען נתונים...</Text>
+  //       </View>
+  //     </SafeAreaView>
+  //   );
+  // }
 
   return (
     <SafeAreaView style={styles.container}>
