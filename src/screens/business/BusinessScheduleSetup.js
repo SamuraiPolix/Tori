@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const BusinessScheduleSetup = ({ navigation, route }) => {
   const { businessData } = route.params;
@@ -87,6 +86,12 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
 
   const handleNext = async () => {
     try {
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
       const scheduleSettings = {
         slotDuration,
         autoApprove,
@@ -94,21 +99,25 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
         maxFutureBookingDays: parseInt(maxFutureBookingDays),
         minTimeBeforeBooking: parseInt(minTimeBeforeBooking),
         allowCancellation,
-        cancellationTimeLimit: parseInt(cancellationTimeLimit)
+        cancellationTimeLimit: parseInt(cancellationTimeLimit),
+        workingHours,
+        updatedAt: FirebaseApi.getServerTimestamp()
       };
 
-      // שמירת הגדרות הזמנים ושעות הפעילות ב-Firestore
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          scheduleSettings,
-          workingHours,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      await FirebaseApi.updateBusinessSchedule(currentUser.uid, scheduleSettings);
 
-      navigation.navigate('BusinessDashboard', {
-        businessData: { ...businessData, scheduleSettings, workingHours }
+      navigation.reset({
+        index: 0,
+        routes: [{ 
+          name: 'BusinessDashboard',
+          params: {
+            businessId: currentUser.uid,
+            businessData: {
+              ...businessData,
+              schedule: scheduleSettings
+            }
+          }
+        }],
       });
     } catch (error) {
       console.error('Error saving schedule settings:', error);

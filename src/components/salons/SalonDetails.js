@@ -18,14 +18,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { FontFamily, Color, FontSize, Border, Padding } from "../../styles/GlobalStyles";
 import { useNavigation } from '@react-navigation/native';
+import FirebaseApi from '../../utils/FirebaseApi';
 import { Ionicons } from '@expo/vector-icons';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
-import { 
-  findAvailableSlots, 
-  bookAppointment, 
-  initializeBusinessSlots 
-} from '../../utils/appointmentUtils';
 
 // Enable RTL
 I18nManager.allowRTL(true);
@@ -143,51 +137,7 @@ const SalonDetails = ({ route }) => {
     
     try {
       setIsLoading(true);
-      const dateStr = formatDate(date);
-      
-      // Get the available slot IDs for the selected date
-      const availableSlotsDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .collection('availableSlots')
-        .doc(dateStr)
-        .get();
-
-      if (!availableSlotsDoc.exists || !availableSlotsDoc.data()?.slots) {
-        return [];
-      }
-
-      const slotIds = availableSlotsDoc.data().slots;
-      
-      // Get the actual appointment details from the appointments collection
-      const appointmentsPromises = slotIds.map(id => 
-        firestore()
-          .collection('appointments')
-          .doc(id)
-          .get()
-      );
-
-      const appointmentDocs = await Promise.all(appointmentsPromises);
-      
-      // Filter out any invalid appointments and map to time slots
-      const slots = appointmentDocs
-        .filter(doc => doc.exists && doc.data().status === 'available')
-        .map(doc => {
-          const data = doc.data();
-          const startTime = data.startTime.toDate();
-          return {
-            id: doc.id,
-            time: startTime,
-            formattedTime: startTime.toLocaleTimeString('he-IL', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false
-            })
-          };
-        })
-        .sort((a, b) => a.time - b.time);
-
-      return slots;
+      return await FirebaseApi.getAvailableSlots(businessId, date);
     } catch (error) {
       console.error('Error fetching available slots:', error);
       Alert.alert('שגיאה', 'לא ניתן לטעון את התורים הזמינים');
@@ -220,33 +170,7 @@ const SalonDetails = ({ route }) => {
       const isToday = startOfDay.toDateString() === now.toDateString();
       const queryStartTime = isToday ? now : startOfDay;
 
-      const appointmentsSnapshot = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessId)
-        .where('startTime', '>=', firestore.Timestamp.fromDate(queryStartTime))
-        .where('startTime', '<=', firestore.Timestamp.fromDate(endOfDay))
-        .get();
-
-      // Get all booked time slots with their durations from the business services
-      const bookedSlots = await Promise.all(appointmentsSnapshot.docs.map(async doc => {
-        const data = doc.data();
-        
-        // Get the service duration from the business services
-        const businessDoc = await firestore()
-          .collection('businesses')
-          .doc(businessId)
-          .get();
-        
-        const businessServices = businessDoc.data()?.services || [];
-        const appointmentService = businessServices.find(s => s.id === data.serviceId);
-        const appointmentDuration = appointmentService?.duration || 30; // Default to 30 minutes if service not found
-        
-        return {
-          id: doc.id,
-          startTime: data.startTime,
-          duration: appointmentDuration
-        };
-      }));
+      const bookedSlots = await FirebaseApi.getBusinessAppointments(businessId, queryStartTime, endOfDay);
 
       // Get business working hours for the day
       const dayOfWeek = startOfDay.getDay();
@@ -286,7 +210,7 @@ const SalonDetails = ({ route }) => {
       }
 
       while (currentSlot < closeTime) {
-        const slotTime = firestore.Timestamp.fromDate(currentSlot);
+        const slotTime = FirebaseApi.getTimestampFromDate(currentSlot);
         
         // Check if this slot conflicts with any booked appointment
         const isSlotAvailable = !bookedSlots.some(booking => {
@@ -391,7 +315,7 @@ const SalonDetails = ({ route }) => {
 
     try {
       setIsLoading(true);
-      const user = auth().currentUser;
+      const user = FirebaseApi.getCurrentUser();
       
       if (!user) {
         Alert.alert('שגיאה', 'יש להתחבר כדי לקבוע תור');
@@ -411,18 +335,15 @@ const SalonDetails = ({ route }) => {
       // First check if the slot is still available
       const slotTime = selectedTime.time;
       const serviceDuration = selectedService.duration || 30;
-      
-      // Check for overlapping appointments outside the transaction
       const endTime = new Date(slotTime.toDate().getTime() + serviceDuration * 60000);
-      const overlappingAppointments = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessId)
-        .where('startTime', '>=', slotTime)
-        .where('startTime', '<', firestore.Timestamp.fromDate(endTime))
-        .where('status', 'in', ['pending', 'confirmed'])
-        .get();
+      
+      const hasOverlap = await FirebaseApi.checkOverlappingAppointments(
+        businessId,
+        slotTime,
+        endTime
+      );
 
-      if (!overlappingAppointments.empty) {
+      if (hasOverlap) {
         Alert.alert('שגיאה', 'התור כבר נתפס על ידי לקוח אחר, נא לבחור מועד אחר');
         // Refresh available slots
         const result = await findAvailableAppointments(businessId, selectedDate, selectedService);
@@ -430,39 +351,13 @@ const SalonDetails = ({ route }) => {
         return;
       }
 
-      // If no overlapping appointments, proceed with creating the appointment using a transaction
-      await firestore().runTransaction(async (transaction) => {
-        const appointmentRef = firestore().collection('appointments').doc();
-        const appointmentId = appointmentRef.id;
-
-        // Create the appointment within the transaction
-        transaction.set(appointmentRef, {
-          businessId: businessId,
-          customerId: auth().currentUser.uid,
-          serviceId: businessService.id,
-          startTime: selectedTime.time,
-          status: 'pending',
-          notes: null,
-          createdAt: firestore.Timestamp.now(),
-          updatedAt: firestore.Timestamp.now()
-        });
-
-        // Add to user's appointments within the same transaction
-        const userAppointmentRef = firestore()
-          .collection('users')
-          .doc(user.uid)
-          .collection('appointments')
-          .doc(appointmentId);
-
-        transaction.set(userAppointmentRef, {
-          appointmentId: appointmentId,
-          businessId: businessId,
-          serviceId: businessService.id,
-          startTime: selectedTime.time,
-          status: 'pending',
-          createdAt: firestore.Timestamp.now()
-        });
-      });
+      // Create the appointment
+      await FirebaseApi.createAppointment(
+        businessId,
+        user.uid,
+        businessService.id,
+        selectedTime.time
+      );
 
       setShowConfirmModal(false);
       Alert.alert('הצלחה', 'התור נקבע בהצלחה');

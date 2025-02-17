@@ -13,8 +13,7 @@ import {
 import CalendarStrip from 'react-native-calendar-strip';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 import BusinessSidebar from '../../components/BusinessSidebar';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 import { Alert } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
@@ -41,23 +40,23 @@ const BusinessCalendar = ({ navigation }) => {
 
   const fetchBusinessData = async () => {
     try {
-      const businessId = auth().currentUser.uid;
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .get();
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        setError('לא נמצא משתמש מחובר');
+        return;
+      }
 
-      if (!businessDoc.exists) {
+      const data = await FirebaseApi.getBusinessData(currentUser.uid);
+      if (!data) {
         setError('לא נמצא מידע על העסק');
         return;
       }
 
-      const data = businessDoc.data();
       console.log('Fetched business data:', {
         workingHours: data.workingHours,
         slotDuration: data.slotDuration
       });
-      setBusinessData({ ...data, businessId });
+      setBusinessData({ ...data, businessId: currentUser.uid });
     } catch (error) {
       console.error('Error fetching business data:', error);
       setError('שגיאה בטעינת נתוני העסק');
@@ -165,133 +164,31 @@ const BusinessCalendar = ({ navigation }) => {
   };
 
   const fetchAppointments = async () => {
-    if (!businessData || !selectedDate) {
-      console.log('Missing required data:', { businessData, selectedDate });
-      return;
-    }
-    
+    if (!selectedDate || !businessData) return;
+
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Convert moment date to JS Date if needed
-      const jsDate = selectedDate._d ? new Date(selectedDate._d) : new Date(selectedDate);
-      
-      // Get start and end of selected date
-      const startOfDay = new Date(jsDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(jsDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      console.log('Fetching appointments for:', {
-        date: jsDate,
-        businessId: businessData.businessId,
-        businessHours: businessData.workingHours,
-        scheduleSettings: businessData.scheduleSettings
-      });
-
-      // Get working hours for selected date
-      const workingHours = getWorkingHours(selectedDate);
-      console.log('Working hours:', workingHours);
-
-      if (!workingHours || !workingHours.isOpen) {
-        const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][jsDate.getDay()];
-        setError(`העסק סגור ב${dayName}`);
-        setIsLoading(false);
-        return;
-      }
-
-      // Fetch appointments for selected date
-      const appointmentsQuery = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessData.businessId)
-        .get();
-
-      console.log('Found appointments:', appointmentsQuery.size);
-
-      // Generate time slots even if there are no appointments
-      if (appointmentsQuery.empty) {
-        console.log('No appointments found, generating empty slots');
-        const slots = generateTimeSlots(workingHours, []);
-        console.log('Generated slots:', slots);
-        if (Object.keys(slots).length === 0) {
-          setError('שגיאה ביצירת מערכת השעות');
-        } else {
-          setTimeSlots(slots);
-          setAppointments([]);
-        }
-        setIsLoading(false);
-        return;
-      }
-
-      // Filter appointments for the selected date in memory
-      const filteredAppointments = appointmentsQuery.docs.filter(doc => {
-        const appointmentData = doc.data();
-        if (!appointmentData.startTime) return false;
-        
-        const appointmentDate = new Date(appointmentData.startTime.toDate());
-        return appointmentDate >= startOfDay && appointmentDate <= endOfDay;
-      });
-
-      console.log('Filtered appointments for date:', filteredAppointments.length);
-
-      // Get business services for reference
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessData.businessId)
-        .get();
-      
-      const businessServices = businessDoc.exists ? businessDoc.data().services || {} : {};
-
-      const appointmentsData = await Promise.all(
-        filteredAppointments.map(async doc => {
-          const appointmentData = doc.data();
-          
-          // Get customer data
-          let customerData = null;
-          if (appointmentData.customerId) {
-            try {
-              const customerDoc = await firestore()
-                .collection('users')
-                .doc(appointmentData.customerId)
-                .get();
-              customerData = customerDoc.exists ? customerDoc.data() : null;
-            } catch (error) {
-              console.error('Error fetching customer data:', error);
-            }
-          }
-
-          // Get service details
-          const service = businessServices[appointmentData.serviceId] || null;
-
-          return {
-            id: doc.id,
-            startTime: appointmentData.startTime,
-            customerName: customerData?.name || customerData?.fullName || 'לקוח לא ידוע',
-            service: service ? {
-              name: service.name,
-              duration: service.duration,
-              price: service.price
-            } : null,
-            status: appointmentData.status || 'pending',
-            customerPhone: customerData?.phone || customerData?.phoneNumber || '',
-          };
-        })
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const appointments = await FirebaseApi.getBusinessAppointments(
+        businessData.businessId,
+        dateStr
       );
-
-      // Generate time slots with appointments
-      const slots = generateTimeSlots(workingHours, appointmentsData);
-      console.log('Generated slots structure:', {
-        hours: Object.keys(slots),
-        totalSlots: Object.values(slots).reduce((total, hourSlots) => total + hourSlots.length, 0)
-      });
       
-      if (Object.keys(slots).length === 0) {
-        setError('שגיאה ביצירת מערכת השעות');
-      } else {
+      setAppointments(appointments);
+      
+      // Update time slots
+      const workingHours = getWorkingHours(selectedDate);
+      if (workingHours) {
+        const slots = await FirebaseApi.getBusinessTimeSlots(
+          businessData.businessId,
+          dateStr,
+          workingHours,
+          businessData.slotDuration,
+          appointments
+        );
         setTimeSlots(slots);
-        setAppointments(appointmentsData);
+      } else {
+        setTimeSlots({});
       }
     } catch (error) {
       console.error('Error fetching appointments:', error);

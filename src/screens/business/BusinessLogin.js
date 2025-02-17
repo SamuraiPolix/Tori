@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const BusinessLogin = ({ navigation }) => {
   console.log('Rendering BusinessLogin...'); // Debug log
@@ -42,17 +41,16 @@ const BusinessLogin = ({ navigation }) => {
     setLoading(true);
     try {
       console.log('Signing in with email...'); // Debug log
-      const userCredential = await auth().signInWithEmailAndPassword(email, password);
-      const user = userCredential.user;
+      const user = await FirebaseApi.signInWithEmailAndPassword(email, password);
       console.log('User signed in:', user.uid); // Debug log
 
       console.log('Fetching business doc...'); // Debug log
-      const businessDoc = await firestore().collection('businesses').doc(user.uid).get();
-      console.log('Business doc exists:', businessDoc.exists); // Debug log
+      const businessData = await FirebaseApi.getBusinessData(user.uid);
+      console.log('Business data exists:', !!businessData); // Debug log
 
-      if (!businessDoc.exists) {
+      if (!businessData) {
         console.log('No business doc found, signing out...'); // Debug log
-        await auth().signOut();
+        await FirebaseApi.signOut();
         Alert.alert('שגיאה', 'משתמש זה אינו רשום כבעל עסק');
         setLoading(false);
         return;
@@ -65,14 +63,12 @@ const BusinessLogin = ({ navigation }) => {
           name: 'BusinessDashboard',
           params: { 
             businessId: user.uid,
-            businessData: businessDoc.data()
+            businessData
           }
         }],
       });
     } catch (error) {
       console.error('Login error:', error); // Debug log
-      console.error('Error code:', error.code); // Debug log
-      console.error('Error message:', error.message); // Debug log
       
       let errorMessage = 'אירעה שגיאה בהתחברות';
       

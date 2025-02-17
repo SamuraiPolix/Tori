@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Activ
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import SalonCard from './SalonCard';
 import SalonDetails from './SalonDetails';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -18,22 +18,14 @@ const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
 
   const fetchSalons = async () => {
     try {
-      const salonsSnapshot = await firestore()
-        .collection('businesses')
-        .where('categories', 'array-contains', 1)
-        .get();
+      const category = await FirebaseApi.getHaircutCategory();
+      if (!category) {
+        console.error('No haircut category found');
+        return;
+      }
 
-      const salonsData = salonsSnapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      }));
-
-      // Sort by rating in memory
-      const sortedSalons = salonsData
-        .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-        .slice(0, 10); // Show only top 10
-
-      setSalons(sortedSalons);
+      const topSalons = await FirebaseApi.getTopBusinesses(category.categoryId, 10);
+      setSalons(topSalons);
     } catch (error) {
       console.error('Error fetching salons:', error);
     } finally {

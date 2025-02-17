@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, ScrollView, Text, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import CategoryItem from './CategoryItem';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 import { CATEGORIES } from './categoriesData';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -20,24 +20,19 @@ const CategoriesList = ({ onSelectCategory }) => {
 
   const fetchCategories = async () => {
     try {
-      const categoriesSnapshot = await firestore()
-        .collection('categories')
-        .orderBy('name', 'asc')
-        .get();
-      
-      const categoriesData = categoriesSnapshot.docs.map(doc => {
-        const data = doc.data();
-        const localCategory = CATEGORIES.find(cat => cat.id === data.categoryId);
+      const categoriesData = await FirebaseApi.getCategories();
+      const processedCategories = categoriesData.map(category => {
+        const localCategory = CATEGORIES.find(cat => cat.id === category.categoryId);
         return {
-          id: doc.id,
-          categoryId: data.categoryId,
-          title: data.name,
-          type: doc.id,
+          id: category.id,
+          categoryId: category.categoryId,
+          title: category.name,
+          type: category.id,
           icon: localCategory ? localCategory.icon : defaultCategoryIcon
         };
       });
       
-      setCategories(categoriesData);
+      setCategories(processedCategories);
     } catch (error) {
       console.error('Error fetching categories:', error);
     } finally {

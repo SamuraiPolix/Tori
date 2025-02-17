@@ -4,8 +4,7 @@ import { Image } from 'expo-image';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
 import BottomNavigation from '../components/common/BottomNavigation';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // Force RTL
 I18nManager.allowRTL(true);
@@ -25,38 +24,30 @@ const Profile = ({ navigation }) => {
 
   const fetchUserData = async () => {
     try {
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) {
         navigation.navigate('Login');
         return;
       }
 
       // Fetch user profile data
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-
-      if (userDoc.exists) {
-        const userData = userDoc.data();
+      const userData = await FirebaseApi.getUserData(currentUser.uid);
+      if (userData) {
         setUserInfo({
           name: userData.name || 'משתמש חדש',
           email: userData.email || currentUser.email,
           phone: userData.phone || '',
         });
 
-        // Get appointments count using customerId
-        const appointmentsSnapshot = await firestore()
-          .collection('appointments')
-          .where('customerId', '==', currentUser.uid)
-          .get();
-
+        // Get appointments count
+        const appointments = await FirebaseApi.getUserAppointments(currentUser.uid);
+        
         // Get favorites count
-        const userFavorites = userData.favorites || [];
+        const favorites = await FirebaseApi.getUserFavorites(currentUser.uid);
 
         setStats({
-          appointments: appointmentsSnapshot.size,
-          favorites: userFavorites.length
+          appointments: appointments.length,
+          favorites: favorites.length
         });
       }
     } catch (error) {
@@ -68,7 +59,7 @@ const Profile = ({ navigation }) => {
 
   const handleLogout = async () => {
     try {
-      await auth().signOut();
+      await FirebaseApi.signOut();
       navigation.navigate('Login');
     } catch (error) {
       console.error('Error signing out:', error);
