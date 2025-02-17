@@ -14,6 +14,7 @@ import {
   SafeAreaView
 } from 'react-native';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
+import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import BusinessServicesSettings from './BusinessServicesSettings';
 import BusinessHoursSettings from './BusinessHoursSettings';
