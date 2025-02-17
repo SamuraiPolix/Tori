@@ -67,12 +67,52 @@ class FirebaseApi {
   }
 
   static async getBusinessData(businessId) {
-    const doc = await firestore()
-      .collection('businesses')
-      .doc(businessId)
-      .get();
-    
-    return doc.exists ? doc.data() : null;
+    try {
+      if (!businessId) {
+        console.warn('No businessId provided to getBusinessData');
+        return null;
+      }
+
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .get();
+
+      if (!businessDoc.exists) {
+        console.warn(`No business found with ID: ${businessId}`);
+        return null;
+      }
+
+      const data = businessDoc.data();
+      console.log('Business data retrieved:', {
+        id: businessId,
+        name: data.name,
+        hasServices: !!data.services,
+        servicesCount: data.services ? Object.keys(data.services).length : 0
+      });
+
+      return {
+        id: businessId,
+        ...data
+      };
+    } catch (error) {
+      console.error('Error getting business data:', error);
+      throw error;
+    }
+  }
+
+  static async getBusinessServices(businessId) {
+    try {
+      const businessData = await this.getBusinessData(businessId);
+      if (!businessData || !businessData.services) {
+        console.warn(`No services found for business: ${businessId}`);
+        return {};
+      }
+      return businessData.services;
+    } catch (error) {
+      console.error('Error getting business services:', error);
+      throw error;
+    }
   }
 
   static async updateBusinessData(businessId, data) {
@@ -111,8 +151,8 @@ class FirebaseApi {
     const appointmentsSnapshot = await firestore()
       .collection('appointments')
       .where('businessId', '==', businessId)
-      .where('startTime', '>=', startOfDay)
-      .where('startTime', '<=', endOfDay)
+      .where('startTime', '>=', firestore.Timestamp.fromDate(startOfDay))
+      .where('startTime', '<=', firestore.Timestamp.fromDate(endOfDay))
       .get();
 
     return appointmentsSnapshot.docs.map(doc => ({
@@ -187,22 +227,34 @@ class FirebaseApi {
   }
 
   static async updateAppointmentStatus(appointmentId, newStatus) {
-    const appointmentRef = firestore().collection('appointments').doc(appointmentId);
-    await appointmentRef.update({
-      status: newStatus,
-      updatedAt: this.getServerTimestamp()
-    });
+    try {
+      if (!appointmentId) {
+        throw new Error('No appointmentId provided to updateAppointmentStatus');
+      }
 
-    // Get appointment details for notification
-    const appointmentDoc = await appointmentRef.get();
-    if (appointmentDoc.exists) {
-      const appointmentData = appointmentDoc.data();
-      await this.sendAppointmentStatusNotification(
-        appointmentData.customerId,
-        appointmentId,
-        newStatus
-      );
+      const appointmentRef = this.getAppointmentRef(appointmentId);
+      if (!appointmentRef) {
+        throw new Error('Could not get appointment reference');
+      }
+
+      await appointmentRef.update({
+        status: newStatus,
+        updatedAt: firestore.FieldValue.serverTimestamp()
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error updating appointment status:', error);
+      throw error;
     }
+  }
+
+  static getAppointmentRef(appointmentId) {
+    if (!appointmentId) {
+      console.warn('No appointmentId provided to getAppointmentRef');
+      return null;
+    }
+    return firestore().collection('appointments').doc(appointmentId);
   }
 
   static async sendAppointmentStatusNotification(customerId, appointmentId, status) {
@@ -528,8 +580,72 @@ class FirebaseApi {
   }
 
   static async getUserData(userId) {
-    const userDoc = await firestore().collection('users').doc(userId).get();
-    return userDoc.exists ? userDoc.data() : null;
+    try {
+      if (!userId) {
+        console.warn('No userId provided to getUserData');
+        return null;
+      }
+
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(userId)
+        .get();
+
+      if (!userDoc.exists) {
+        console.warn(`No user found with ID: ${userId}`);
+        return null;
+      }
+
+      const data = userDoc.data();
+      // Normalize user data fields
+      return {
+        id: userId,
+        name: data.displayName || data.name || data.fullName,
+        phone: data.phoneNumber || data.phone,
+        email: data.email,
+        ...data
+      };
+    } catch (error) {
+      console.error('Error getting user data:', error);
+      throw error;
+    }
+  }
+
+  static async getUsersData(userIds) {
+    try {
+      if (!userIds || userIds.length === 0) {
+        console.warn('No userIds provided to getUsersData');
+        return {};
+      }
+
+      const userDocs = await Promise.all(
+        userIds.map(id => 
+          firestore()
+            .collection('users')
+            .doc(id)
+            .get()
+        )
+      );
+
+      const usersData = {};
+      userDocs.forEach(doc => {
+        if (doc.exists) {
+          const data = doc.data();
+          usersData[doc.id] = {
+            id: doc.id,
+            name: data.displayName || data.name || data.fullName,
+            phone: data.phoneNumber || data.phone,
+            email: data.email,
+            ...data
+          };
+        }
+      });
+
+      return usersData;
+    } catch (error) {
+      console.error('Error getting users data:', error);
+      throw error;
+    }
   }
 
   static async createUserData(userId, data) {
@@ -566,12 +682,66 @@ class FirebaseApi {
     }
   }
 
+  // Timestamp utility methods
   static getServerTimestamp() {
-    return firestore.Timestamp.now();
+    return firestore.FieldValue.serverTimestamp();
   }
 
-  static getTimestampFromDate(date) {
+  static createTimestamp(date) {
+    if (!date || !(date instanceof Date)) {
+      throw new Error('createTimestamp requires a valid Date object');
+    }
     return firestore.Timestamp.fromDate(date);
+  }
+
+  static async getAppointmentsForDate(businessId, date) {
+    try {
+      if (!businessId || !date) {
+        throw new Error('businessId and date are required');
+      }
+
+      // Convert date to start and end of day
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Convert to Firestore Timestamps
+      const startTimestamp = this.createTimestamp(startOfDay);
+      const endTimestamp = this.createTimestamp(endOfDay);
+
+      const appointmentsQuery = await firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .where('startTime', '>=', startTimestamp)
+        .where('startTime', '<=', endTimestamp)
+        .get();
+
+      return appointmentsQuery.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+      throw error;
+    }
+  }
+
+  static async getCustomerData(customerId) {
+    try {
+      if (!customerId) return null;
+      
+      const customerDoc = await firestore()
+        .collection('users')
+        .doc(customerId)
+        .get();
+        
+      return customerDoc.exists ? customerDoc.data() : null;
+    } catch (error) {
+      console.error('Error fetching customer data:', error);
+      return null;
+    }
   }
 
   // Verification methods
@@ -722,13 +892,52 @@ class FirebaseApi {
   }
 
   static async getBusinessData(businessId) {
-    const businessDoc = await firestore()
-      .collection('businesses')
-      .doc(businessId)
-      .get();
+    try {
+      if (!businessId) {
+        console.warn('No businessId provided to getBusinessData');
+        return null;
+      }
 
-    if (!businessDoc.exists) return null;
-    return businessDoc.data();
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .get();
+
+      if (!businessDoc.exists) {
+        console.warn(`No business found with ID: ${businessId}`);
+        return null;
+      }
+
+      const data = businessDoc.data();
+      console.log('Business data retrieved:', {
+        id: businessId,
+        name: data.name,
+        hasServices: !!data.services,
+        servicesCount: data.services ? Object.keys(data.services).length : 0
+      });
+
+      return {
+        id: businessId,
+        ...data
+      };
+    } catch (error) {
+      console.error('Error getting business data:', error);
+      throw error;
+    }
+  }
+
+  static async getBusinessServices(businessId) {
+    try {
+      const businessData = await this.getBusinessData(businessId);
+      if (!businessData || !businessData.services) {
+        console.warn(`No services found for business: ${businessId}`);
+        return {};
+      }
+      return businessData.services;
+    } catch (error) {
+      console.error('Error getting business services:', error);
+      throw error;
+    }
   }
 
   static async updateBusinessSchedule(businessId, scheduleData) {
@@ -846,6 +1055,23 @@ class FirebaseApi {
       await user.updateProfile({
         displayName: businessData.name
       });
+    }
+  }
+
+  static async getUserAppointments(userId) {
+    try {
+      const appointmentsSnapshot = await firestore()
+        .collection('appointments')
+        .where('customerId', '==', userId)
+        .get();
+
+      return appointmentsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting user appointments:', error);
+      throw error;
     }
   }
 }
