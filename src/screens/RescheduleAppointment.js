@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, I18nManager } from 'react-native';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
-import { rescheduleAppointment } from '../utils/cloudFunctions';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // Force RTL
 I18nManager.allowRTL(true);
@@ -20,54 +19,36 @@ const RescheduleAppointment = ({ route, navigation }) => {
     const fetchAppointmentAndSlots = async () => {
       try {
         // Fetch appointment details
-        const appointmentDoc = await firestore()
-          .collection('appointments')
-          .doc(appointmentId)
-          .get();
-
-        if (!appointmentDoc.exists) {
+        const appointmentData = await FirebaseApi.getAppointmentById(appointmentId);
+        if (!appointmentData) {
           console.error('Appointment not found');
           navigation.goBack();
           return;
         }
 
-        const appointmentData = appointmentDoc.data();
         setAppointment(appointmentData);
 
         // Fetch business details
-        const businessDoc = await firestore()
-          .collection('businesses')
-          .doc(appointmentData.businessId)
-          .get();
-
-        const businessData = businessDoc.data();
-
+        const businessData = await FirebaseApi.getBusinessData(appointmentData.businessId);
+        
         // Fetch available slots for the next 30 days
-        const slots = [];
         const startDate = new Date();
         const endDate = new Date();
         endDate.setDate(endDate.getDate() + 30);
 
-        for (let date = startDate; date <= endDate; date.setDate(date.getDate() + 1)) {
-          const dateStr = date.toISOString().split('T')[0];
-          const slotsDoc = await firestore()
-            .collection('businesses')
-            .doc(appointmentData.businessId)
-            .collection('availableSlots')
-            .doc(dateStr)
-            .get();
+        const slots = await FirebaseApi.getAvailableSlots(
+          appointmentData.businessId,
+          startDate,
+          endDate
+        );
 
-          if (slotsDoc.exists) {
-            const daySlots = slotsDoc.data().slots || [];
-            slots.push(...daySlots.map(slot => ({
-              ...slot,
-              businessName: businessData.name,
-              date: new Date(slot.startTime.toDate())
-            })));
-          }
-        }
+        const formattedSlots = slots.map(slot => ({
+          ...slot,
+          businessName: businessData.name,
+          date: new Date(slot.startTime.toDate())
+        }));
 
-        setAvailableSlots(slots.sort((a, b) => a.date - b.date));
+        setAvailableSlots(formattedSlots.sort((a, b) => a.date - b.date));
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -83,7 +64,7 @@ const RescheduleAppointment = ({ route, navigation }) => {
 
     try {
       setLoading(true);
-      await rescheduleAppointment(appointmentId, selectedSlot.date);
+      await FirebaseApi.rescheduleAppointment(appointmentId, selectedSlot.date);
       navigation.goBack();
     } catch (error) {
       console.error('Error rescheduling appointment:', error);

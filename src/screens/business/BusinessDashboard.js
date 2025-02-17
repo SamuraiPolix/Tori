@@ -13,8 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 import BusinessSidebar from '../../components/BusinessSidebar';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const BusinessDashboard = ({ navigation, route }) => {
   const [businessData, setBusinessData] = useState(null);
@@ -34,35 +33,30 @@ const BusinessDashboard = ({ navigation, route }) => {
 
   useEffect(() => {
     const loadBusinessData = async () => {
-      setIsLoading(false);
+      setIsLoading(true);
       try {
-        const userId = auth().currentUser.uid;
+        const currentUser = FirebaseApi.getCurrentUser();
+        const userId = currentUser.uid;
         console.log('Current user ID:', userId);
         
         // Subscribe to business data changes
-        const businessUnsubscribe = firestore()
-          .collection('businesses')
-          .doc(userId)
-          .onSnapshot((doc) => {
-            if (doc.exists) {
-              const data = doc.data();
-              console.log('Business data updated:', data);
-              setBusinessData(data);
-            } else {
-              console.log('No business document found for user:', userId);
-              setBusinessData(null);
-            }
-          }, (error) => {
+        const businessUnsubscribe = FirebaseApi.subscribeToBusinessData(
+          userId,
+          (data) => {
+            console.log('Business data updated:', data);
+            setBusinessData(data);
+          },
+          (error) => {
             console.error('Error in business listener:', error);
-          });
+          }
+        );
 
         // Subscribe to appointments changes
-        const appointmentsUnsubscribe = firestore()
-          .collection('appointments')
-          .where('businessId', '==', userId)
-          .onSnapshot((snapshot) => {
+        const appointmentsUnsubscribe = FirebaseApi.subscribeToAppointments(
+          userId,
+          (appointments) => {
             console.log('Appointments updated');
-            if (!snapshot.empty) {
+            if (appointments.length > 0) {
               fetchAppointments(userId);
             } else {
               setPendingAppointments([]);
@@ -71,9 +65,11 @@ const BusinessDashboard = ({ navigation, route }) => {
               setTodayAppointments([]);
               setFutureAppointments([]);
             }
-          }, (error) => {
+          },
+          (error) => {
             console.error('Error in appointments listener:', error);
-          });
+          }
+        );
 
         // Cleanup function
         return () => {
@@ -98,14 +94,11 @@ const BusinessDashboard = ({ navigation, route }) => {
       today.setHours(0, 0, 0, 0);
 
       // Fetch appointments for this specific business
-      const appointmentsSnapshot = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessId)
-        .get();
+      const appointments = await FirebaseApi.getAppointments(businessId);
 
-      console.log('Appointments found:', appointmentsSnapshot.size);
+      console.log('Appointments found:', appointments.length);
 
-      if (appointmentsSnapshot.empty) {
+      if (appointments.length === 0) {
         console.log('No appointments found for this business');
         setPendingAppointments([]);
         setCanceledAppointments([]);
@@ -117,20 +110,11 @@ const BusinessDashboard = ({ navigation, route }) => {
       }
 
       // Collect all appointments and unique customer IDs
-      const appointments = [];
       const customerIds = new Set();
 
-      appointmentsSnapshot.forEach(doc => {
-        const appointmentData = doc.data();
-        console.log('Raw appointment data:', appointmentData);
-        
-        appointments.push({
-          id: doc.id,
-          ...appointmentData
-        });
-        
-        if (appointmentData.customerId) {
-          customerIds.add(appointmentData.customerId);
+      appointments.forEach(appointment => {
+        if (appointment.customerId) {
+          customerIds.add(appointment.customerId);
         }
       });
 
@@ -141,10 +125,7 @@ const BusinessDashboard = ({ navigation, route }) => {
       if (customerIds.size > 0) {
         const customerSnapshots = await Promise.all(
           Array.from(customerIds).map(customerId =>
-            firestore()
-              .collection('users')
-              .doc(customerId)
-              .get()
+            FirebaseApi.getCustomerData(customerId)
           )
         );
 
@@ -189,10 +170,7 @@ const BusinessDashboard = ({ navigation, route }) => {
           try {
             // Get business data from Firestore
             console.log(`Fetching business data for ID: ${appointment.businessId}`);
-            const businessDoc = await firestore()
-              .collection('businesses')
-              .doc(appointment.businessId)
-              .get();
+            const businessDoc = await FirebaseApi.getBusinessData(appointment.businessId);
             
             if (businessDoc.exists) {
               const businessData = businessDoc.data();
@@ -370,15 +348,10 @@ const BusinessDashboard = ({ navigation, route }) => {
       setIsLoading(true);
       console.log(`Updating appointment ${appointmentId} to status: ${newStatus}`);
 
-      const appointmentRef = firestore()
-        .collection('appointments')
-        .doc(appointmentId);
+      const appointmentRef = FirebaseApi.getAppointmentRef(appointmentId);
 
       // עדכון הסטטוס והתאריך עדכון
-      await appointmentRef.update({
-        status: newStatus,
-        updatedAt: firestore.FieldValue.serverTimestamp()
-      });
+      await FirebaseApi.updateAppointmentStatus(appointmentRef, newStatus);
 
       // הודעה למשתמש
       Alert.alert(
@@ -388,7 +361,7 @@ const BusinessDashboard = ({ navigation, route }) => {
       );
 
       // רענון הנתונים
-      const userId = auth().currentUser.uid;
+      const userId = FirebaseApi.getCurrentUser().uid;
       fetchAppointments(userId);
     } catch (error) {
       console.error('Error updating appointment:', error);

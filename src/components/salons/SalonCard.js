@@ -3,8 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-nati
 import { Image } from "expo-image";
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import { Ionicons } from "@expo/vector-icons";
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH * 0.7;
@@ -17,16 +16,11 @@ const SalonCard = ({ salon: business, onPress }) => {
   }, []);
 
   const checkIfFavorite = async () => {
-    const currentUser = auth().currentUser;
+    const currentUser = FirebaseApi.getCurrentUser();
     if (!currentUser) return;
 
     try {
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-
-      const favorites = userDoc.data()?.favorites || [];
+      const favorites = await FirebaseApi.getUserFavorites(currentUser.uid);
       setIsFavorite(favorites.includes(business.id));
     } catch (error) {
       console.error('Error checking favorite status:', error);
@@ -35,22 +29,15 @@ const SalonCard = ({ salon: business, onPress }) => {
 
   const handleFavoritePress = async (event) => {
     event.stopPropagation();
-    const currentUser = auth().currentUser;
+    const currentUser = FirebaseApi.getCurrentUser();
     if (!currentUser) return;
 
     try {
-      const userRef = firestore().collection('users').doc(currentUser.uid);
-      
       if (isFavorite) {
-        await userRef.update({
-          favorites: firestore.FieldValue.arrayRemove(business.id)
-        });
+        await FirebaseApi.removeFromFavorites(currentUser.uid, business.id);
       } else {
-        await userRef.update({
-          favorites: firestore.FieldValue.arrayUnion(business.id)
-        });
+        await FirebaseApi.addToFavorites(currentUser.uid, business.id);
       }
-      
       setIsFavorite(!isFavorite);
     } catch (error) {
       console.error('Error updating favorites:', error);

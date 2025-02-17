@@ -13,8 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Color, FontFamily } from '../../styles/GlobalStyles';
 import * as ImagePicker from 'expo-image-picker';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const BusinessProfileSetup = ({ navigation, route }) => {
   const { businessData } = route.params;
@@ -48,18 +47,21 @@ const BusinessProfileSetup = ({ navigation, route }) => {
 
   const handleNext = async () => {
     try {
-      // שמירת נתוני הפרופיל ב-Firestore
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          about: profileData.about,
-          images: profileData.images,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
+      // Save profile data to Firestore
+      await FirebaseApi.updateBusinessProfile(currentUser.uid, {
+        about: profileData.about,
+        images: profileData.images,
+        updatedAt: FirebaseApi.getServerTimestamp()
+      });
 
       navigation.navigate('BusinessServicesSetup', {
-        businessId: auth().currentUser.uid,
+        businessId: currentUser.uid,
         businessData: { ...businessData, ...profileData }
       });
     } catch (error) {
@@ -147,7 +149,7 @@ const BusinessProfileSetup = ({ navigation, route }) => {
           <TouchableOpacity
             style={styles.skipButton}
             onPress={() => navigation.navigate('BusinessScheduleSetup', {
-              businessId: auth().currentUser.uid,
+              businessId: FirebaseApi.getCurrentUser().uid,
               businessData: { ...businessData, about: '', images: [] }
             })}
           >

@@ -14,8 +14,7 @@ import {
 } from 'react-native';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // Force RTL
 I18nManager.allowRTL(true);
@@ -31,7 +30,7 @@ const PersonalDetails = ({ navigation }) => {
     phoneNumber: ''
   });
   const [originalPhone, setOriginalPhone] = useState('');
-  const [verificationId, setVerificationId] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
   const [verificationCode, setVerificationCode] = useState('');
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -42,25 +41,20 @@ const PersonalDetails = ({ navigation }) => {
 
   const fetchUserData = async () => {
     try {
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) {
         navigation.navigate('Login');
         return;
       }
 
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-
-      if (userDoc.exists) {
-        const data = userDoc.data();
+      const userData = await FirebaseApi.getUserData(currentUser.uid);
+      if (userData) {
         setUserData({
-          name: data.name || '',
-          email: data.email || currentUser.email,
-          phoneNumber: data.phoneNumber || ''
+          name: userData.name || '',
+          email: userData.email || currentUser.email,
+          phoneNumber: userData.phoneNumber || ''
         });
-        setOriginalPhone(data.phoneNumber || '');
+        setOriginalPhone(userData.phoneNumber || '');
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -73,16 +67,14 @@ const PersonalDetails = ({ navigation }) => {
   const sendVerificationCode = async () => {
     try {
       setIsSendingCode(true);
-      setVerifying(true);
-      const phoneNumber = '+972' + userData.phoneNumber.substring(1); // Convert 05X to +972
-      const confirmation = await auth().verifyPhoneNumber(phoneNumber);
-      setVerificationId(confirmation.verificationId);
+      const phoneNumber = userData.phoneNumber;
+      const confirmationResult = await FirebaseApi.sendVerificationCode(phoneNumber);
+      setConfirmation(confirmationResult);
       setShowVerificationModal(true);
     } catch (error) {
       console.error('Error sending verification code:', error);
       Alert.alert('שגיאה', 'לא ניתן לשלוח קוד אימות. נסה שוב מאוחר יותר');
     } finally {
-      setVerifying(false);
       setIsSendingCode(false);
     }
   };
@@ -90,18 +82,45 @@ const PersonalDetails = ({ navigation }) => {
   const verifyCode = async () => {
     try {
       setVerifying(true);
-      const credential = auth.PhoneAuthProvider.credential(
-        verificationId,
-        verificationCode
-      );
-      await auth().currentUser.linkWithCredential(credential);
+      await FirebaseApi.verifyCode(confirmation, verificationCode);
       await saveUserData();
       setShowVerificationModal(false);
+      Alert.alert('הצלחה', 'הפרטים עודכנו בהצלחה');
     } catch (error) {
       console.error('Error verifying code:', error);
-      Alert.alert('שגיאה', 'קוד אימות שגוי');
+      Alert.alert('שגיאה', 'קוד האימות שגוי');
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const saveUserData = async () => {
+    try {
+      setSaving(true);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) return;
+
+      // If email changed, verify it first
+      if (userData.email !== currentUser.email) {
+        await FirebaseApi.verifyBeforeUpdateEmail(userData.email);
+        Alert.alert('הודעה', 'נשלח אליך מייל לאימות הכתובת החדשה');
+      }
+
+      // Update user data in Firestore
+      await FirebaseApi.updateUserData(currentUser.uid, {
+        name: userData.name,
+        email: userData.email,
+        phoneNumber: userData.phoneNumber,
+        updatedAt: FirebaseApi.getServerTimestamp()
+      });
+
+      Alert.alert('הצלחה', 'הפרטים עודכנו בהצלחה');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error saving user data:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת הנתונים');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -124,30 +143,6 @@ const PersonalDetails = ({ navigation }) => {
     } catch (error) {
       console.error('Error in save process:', error);
       Alert.alert('שגיאה', 'אירעה שגיאה בשמירת הנתונים');
-    }
-  };
-
-  const saveUserData = async () => {
-    try {
-      setSaving(true);
-      const currentUser = auth().currentUser;
-      if (!currentUser) return;
-
-      await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .update({
-          name: userData.name,
-          phoneNumber: userData.phoneNumber,
-        });
-
-      Alert.alert('הצלחה', 'הפרטים עודכנו בהצלחה');
-      navigation.goBack();
-    } catch (error) {
-      console.error('Error saving user data:', error);
-      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת הנתונים');
-    } finally {
-      setSaving(false);
     }
   };
 

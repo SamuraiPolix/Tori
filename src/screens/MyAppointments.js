@@ -4,9 +4,7 @@ import { Image } from 'expo-image';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
 import BottomNavigation from '../components/common/BottomNavigation';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
-import { processAppointmentCancellation } from '../utils/cloudFunctions';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // Force RTL
 I18nManager.allowRTL(true);
@@ -58,48 +56,38 @@ const MyAppointments = ({ navigation }) => {
   const fetchAppointments = async () => {
     try {
       setLoading(true);
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) {
         navigation.navigate('Login');
         return;
       }
 
-      const appointmentsRef = firestore()
-        .collection('appointments')
-        .where('customerId', '==', currentUser.uid);
-
-      const snapshot = await appointmentsRef.get();
+      const userAppointments = await FirebaseApi.getUserAppointments(currentUser.uid);
       const now = new Date();
       const upcoming = [];
       const past = [];
       
-      for (const doc of snapshot.docs) {
-        const appointmentData = doc.data();
+      for (const appointment of userAppointments) {
         // Skip completed appointments
-        if (appointmentData.status === 'completed') continue;
+        if (appointment.status === 'completed') continue;
 
-        const appointmentDate = appointmentData.startTime.toDate();
+        const appointmentDate = appointment.startTime.toDate();
         
-        // Fetch business details and find service name
-        const businessDoc = await firestore()
-          .collection('businesses')
-          .doc(appointmentData.businessId)
-          .get();
-        
-        const businessData = businessDoc.data();
+        // Fetch business details
+        const businessData = await FirebaseApi.getBusinessData(appointment.businessId);
         
         // Find the service name from the services array
         const service = businessData.services.find(
-          service => service.id === appointmentData.serviceId
+          service => service.id === appointment.serviceId
         );
         const serviceName = service ? service.name : 'שירות לא ידוע';
 
-        const appointment = {
-          id: doc.id,
-          ...appointmentData,
+        const appointmentWithDetails = {
+          id: appointment.id,
+          ...appointment,
           businessName: businessData.name,
           businessImage: businessData.image,
-          serviceName: serviceName, // Add service name
+          serviceName,
           date: appointmentDate.toLocaleDateString('he-IL', {
             day: 'numeric',
             month: 'long',
@@ -113,39 +101,34 @@ const MyAppointments = ({ navigation }) => {
         };
 
         if (appointmentDate > now) {
-          upcoming.push(appointment);
+          upcoming.push(appointmentWithDetails);
         } else {
-          past.push(appointment);
+          past.push(appointmentWithDetails);
         }
       }
 
-      setAppointments({
-        upcoming: upcoming.sort((a, b) => new Date(a.startTime) - new Date(b.startTime)),
-        past: past.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))
-      });
+      // Sort appointments by date
+      upcoming.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      past.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+      setAppointments({ upcoming, past });
     } catch (error) {
       console.error('Error fetching appointments:', error);
       Alert.alert('שגיאה', 'אירעה שגיאה בטעינת התורים');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    fetchAppointments().finally(() => setRefreshing(false));
-  }, []);
-
   const handleCancelAppointment = async (appointmentId) => {
     try {
-      await processAppointmentCancellation(appointmentId);
-      // Refresh appointments after cancellation
-      setAppointments(prev => ({
-        ...prev,
-        upcoming: prev.upcoming.filter(apt => apt.id !== appointmentId)
-      }));
+      await FirebaseApi.cancelAppointment(appointmentId);
+      Alert.alert('הצלחה', 'התור בוטל בהצלחה');
+      fetchAppointments(); // Refresh the list
     } catch (error) {
-      console.error('Error cancelling appointment:', error);
+      console.error('Error canceling appointment:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בביטול התור');
     }
   };
 
@@ -156,6 +139,11 @@ const MyAppointments = ({ navigation }) => {
   const handleCancel = (appointment) => {
     handleCancelAppointment(appointment.id);
   };
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    fetchAppointments();
+  }, []);
 
   const renderAppointmentCard = (appointment, isPast = false) => (
     <View key={appointment.id} style={styles.appointmentCard}>

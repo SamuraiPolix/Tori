@@ -30,10 +30,9 @@ import FilterModal from '../components/filters/FilterModal';
 // Import Data
 import { NEARBY_SALONS, SALONS } from '../components/salons/salonsData';
 
-// Import Firebase and user storage
+// Import Firebase API and user storage
 import { getUserData, storeUserData } from "../utils/userStorage";
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // קונפיגורציה של RTL
 I18nManager.allowRTL(true);
@@ -68,7 +67,6 @@ const HomeScreen = ({ navigation }) => {
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
     Promise.all([
-      // Add refs to your components that need refreshing
       nearbySalonsRef.current?.fetchNearbySalons(),
       salonsListRef.current?.fetchSalons(),
     ]).finally(() => {
@@ -91,22 +89,19 @@ const HomeScreen = ({ navigation }) => {
         }
 
         // If no local data, get from Firebase
-        const currentUser = auth().currentUser;
+        const currentUser = FirebaseApi.getCurrentUser();
         if (currentUser) {
-          const userDoc = await firestore()
-            .collection('users')
-            .doc(currentUser.uid)
-            .get();
-          
-          if (userDoc.exists) {
-            const userData = userDoc.data();
-            setUserName(userData.name);
-            // Update local storage
-            await storeUserData(userData);
+          const userData = await FirebaseApi.getUserData(currentUser.uid);
+          if (userData) {
+            const name = userData.name || userData.displayName || 'אורח';
+            setUserName(name);
+            // Store in local storage for future use
+            await storeUserData({ name });
           }
         }
       } catch (error) {
         console.error('Error loading user name:', error);
+        setUserName('אורח');
       }
     };
 
