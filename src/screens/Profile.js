@@ -69,7 +69,7 @@ const Profile = ({ navigation }) => {
   const handleMenuPress = (menuItem) => {
     switch (menuItem) {
       case 'appointments':
-        navigation.navigate('Appointments');
+        navigation.navigate('MyAppointments');
         break;
       case 'favorites':
         navigation.navigate('Saved');

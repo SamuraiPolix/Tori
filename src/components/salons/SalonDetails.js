@@ -42,6 +42,7 @@ const SalonDetails = ({ route }) => {
   const [activeTab, setActiveTab] = React.useState(route.params?.initialTab || 'about');
   const [selectedService, setSelectedService] = React.useState(null);
   const [showConfirmModal, setShowConfirmModal] = React.useState(false);
+  const [notes, setNotes] = React.useState(null);
 
   // Ensure we have valid business data
   if (!route?.params?.business) {
@@ -223,7 +224,7 @@ const SalonDetails = ({ route }) => {
           
           // Check if there's any overlap between the service duration and the booked slot
           const serviceEndMinutes = slotMinutes + serviceDuration;
-          const bookingEndMinutes = bookingMinutes + booking.duration;
+          const bookingEndMinutes = bookingMinutes + (booking.serviceDuration || 30);
           
           return (
             (slotMinutes >= bookingMinutes && slotMinutes < bookingEndMinutes) || // Start of service overlaps with booking
@@ -245,7 +246,10 @@ const SalonDetails = ({ route }) => {
             time: slotTime,
             formattedTime: `${hours}:${minutes}`,
             available: true,
-            duration: serviceDuration
+            duration: serviceDuration,
+            serviceName: serviceToUse.name,
+            servicePrice: serviceToUse.price,
+            serviceDuration: serviceDuration
           });
         }
 
@@ -355,12 +359,13 @@ const SalonDetails = ({ route }) => {
         return;
       }
 
-      // Create the appointment
+      // Create the appointment with denormalized data
       await FirebaseApi.createAppointment(
         businessId,
         user.uid,
-        businessService.id,
-        selectedTime.time
+        selectedService.id,
+        slotTime,
+        notes || null
       );
 
       setShowConfirmModal(false);
