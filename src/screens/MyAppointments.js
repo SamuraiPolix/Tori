@@ -10,7 +10,7 @@ import FirebaseApi from '../utils/FirebaseApi';
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 
-const MyAppointments = ({ navigation }) => {
+const MyAppointments = ({ navigation, route }) => {
   const [activeTab, setActiveTab] = useState('upcoming');
   const [appointments, setAppointments] = useState({ upcoming: [], past: [] });
   const [loading, setLoading] = useState(true);
@@ -53,6 +53,14 @@ const MyAppointments = ({ navigation }) => {
     fetchAppointments();
   }, []);
 
+  useEffect(() => {
+    if (route.params?.refresh) {
+      fetchAppointments();
+      // Clear the refresh parameter
+      navigation.setParams({ refresh: undefined });
+    }
+  }, [route.params?.refresh]);
+
   const fetchAppointments = async () => {
     try {
       setLoading(true);
@@ -73,21 +81,37 @@ const MyAppointments = ({ navigation }) => {
 
         const appointmentDate = appointment.startTime.toDate();
         
-        // Fetch business details
+        // Fetch business details (only need name and image)
         const businessData = await FirebaseApi.getBusinessData(appointment.businessId);
-        
-        // Find the service name from the services array
-        const service = businessData.services.find(
-          service => service.id === appointment.serviceId
-        );
-        const serviceName = service ? service.name : 'שירות לא ידוע';
 
+        let serviceName = appointment.serviceName;
+        let servicePrice = appointment.servicePrice;
+        let serviceDuration = appointment.serviceDuration;
+
+        // If service data is not denormalized, look it up from business data
+        if (!serviceName || !servicePrice || !serviceDuration) {
+          const service = businessData.services.find(
+            service => service.id === appointment.serviceId
+          );
+          if (service) {
+            serviceName = service.name;
+            servicePrice = service.price;
+            serviceDuration = service.duration;
+          } else {
+            serviceName = 'שירות לא ידוע';
+            servicePrice = 0;
+            serviceDuration = 30;
+          }
+        }
+        
         const appointmentWithDetails = {
           id: appointment.id,
           ...appointment,
           businessName: businessData.name,
           businessImage: businessData.image,
           serviceName,
+          servicePrice,
+          serviceDuration,
           date: appointmentDate.toLocaleDateString('he-IL', {
             day: 'numeric',
             month: 'long',
@@ -108,13 +132,14 @@ const MyAppointments = ({ navigation }) => {
       }
 
       // Sort appointments by date
-      upcoming.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-      past.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+      upcoming.sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
+      past.sort((a, b) => b.startTime.toDate() - a.startTime.toDate());
 
       setAppointments({ upcoming, past });
     } catch (error) {
       console.error('Error fetching appointments:', error);
-      Alert.alert('שגיאה', 'אירעה שגיאה בטעינת התורים');
+      var errorMessage = 'אירעה שגיאה בטעינת התורים - ' + error;
+      Alert.alert('שגיאה', errorMessage);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -128,7 +153,8 @@ const MyAppointments = ({ navigation }) => {
       fetchAppointments(); // Refresh the list
     } catch (error) {
       console.error('Error canceling appointment:', error);
-      Alert.alert('שגיאה', 'אירעה שגיאה בביטול התור');
+      var errorMessage = 'אירעה שגיאה בביטול התור - ' + error;
+      Alert.alert('שגיאה', errorMessage);
     }
   };
 

@@ -46,24 +46,57 @@ class FirebaseApi {
       );
   }
 
-  static subscribeToAppointments(businessId, onData, onError) {
-    return firestore()
+  static subscribeToAppointmentsByStatus(businessId, status, onData, onError) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let query = firestore()
       .collection('appointments')
       .where('businessId', '==', businessId)
-      .onSnapshot(
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const appointments = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data()
-            }));
-            onData(appointments);
-          } else {
-            onData([]);
-          }
-        },
-        onError
-      );
+      .where('status', '==', status);
+
+    // Add date filter for approved and canceled appointments
+    if (status === 'approved' || status === 'canceled') {
+      query = query.where('startTime', '>=', firestore.Timestamp.fromDate(today));
+    }
+
+    // Add ordering
+    if (status === 'completed') {
+      query = query.orderBy('startTime', 'desc').limit(100);
+    } else {
+      query = query.orderBy('startTime', 'asc');
+    }
+
+    return query.onSnapshot(
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const appointments = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          onData(appointments);
+        } else {
+          onData([]);
+        }
+      },
+      onError
+    );
+  }
+
+  static subscribeToPendingAppointments(businessId, onData, onError) {
+    return this.subscribeToAppointmentsByStatus(businessId, 'pending', onData, onError);
+  }
+
+  static subscribeToApprovedAppointments(businessId, onData, onError) {
+    return this.subscribeToAppointmentsByStatus(businessId, 'approved', onData, onError);
+  }
+
+  static subscribeToCanceledAppointments(businessId, onData, onError) {
+    return this.subscribeToAppointmentsByStatus(businessId, 'canceled', onData, onError);
+  }
+
+  static subscribeToCompletedAppointments(businessId, onData, onError) {
+    return this.subscribeToAppointmentsByStatus(businessId, 'completed', onData, onError);
   }
 
   static async getBusinessData(businessId) {
@@ -130,15 +163,44 @@ class FirebaseApi {
   }
 
   static async getBusinessAllAppointments(businessId) {
+    // Get current date at midnight
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const appointmentsSnapshot = await firestore()
       .collection('appointments')
       .where('businessId', '==', businessId)
+      .where('startTime', '>=', firestore.Timestamp.fromDate(today))
+      .orderBy('startTime', 'asc')
       .get();
 
-    return appointmentsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    return appointmentsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      const startTime = data.startTime.toDate();
+      
+      return {
+        id: doc.id,
+        ...data,
+        formattedDate: startTime.toLocaleDateString('he-IL'),
+        time: startTime.toLocaleTimeString('he-IL', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: false 
+        }),
+        // Use denormalized data
+        userData: {
+          name: data.customerName || 'לקוח לא זמין',
+          phone: data.customerPhone || 'לא זמין',
+          email: data.customerEmail || ''
+        },
+        service: {
+          id: data.serviceId,
+          name: data.serviceName || 'שירות לא זמין',
+          duration: data.serviceDuration || 0,
+          price: data.servicePrice || 0
+        }
+      };
+    });
   }
 
   static async getBusinessAppointments(businessId, dateStr) {
@@ -282,71 +344,9 @@ class FirebaseApi {
 
     return snapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
+      ...doc.data(),
+      startTime: doc.data().startTime.toDate()
     }));
-  }
-
-  static async updateAppointment(appointmentId, data) {
-    await firestore()
-      .collection('appointments')
-      .doc(appointmentId)
-      .update(data);
-  }
-
-  static async createAppointment(data) {
-    return await firestore()
-      .collection('appointments')
-      .add(data);
-  }
-
-  static async deleteAppointment(appointmentId) {
-    await firestore()
-      .collection('appointments')
-      .doc(appointmentId)
-      .delete();
-  }
-
-  // Salon and Appointment methods
-  static async getAvailableSlots(businessId, date) {
-    const dateStr = date.toISOString().split('T')[0];
-    
-    const availableSlotsDoc = await firestore()
-      .collection('businesses')
-      .doc(businessId)
-      .collection('availableSlots')
-      .doc(dateStr)
-      .get();
-
-    if (!availableSlotsDoc.exists || !availableSlotsDoc.data()?.slots) {
-      return [];
-    }
-
-    const slotIds = availableSlotsDoc.data().slots;
-    const appointmentDocs = await Promise.all(
-      slotIds.map(id => 
-        firestore()
-          .collection('appointments')
-          .doc(id)
-          .get()
-      )
-    );
-
-    return appointmentDocs
-      .filter(doc => doc.exists && doc.data().status === 'available')
-      .map(doc => {
-        const data = doc.data();
-        const startTime = data.startTime.toDate();
-        return {
-          id: doc.id,
-          time: startTime,
-          formattedTime: startTime.toLocaleTimeString('he-IL', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          })
-        };
-      })
-      .sort((a, b) => a.time - b.time);
   }
 
   static async getBusinessAppointments(businessId, startTime, endTime) {
@@ -357,18 +357,17 @@ class FirebaseApi {
       .where('startTime', '<=', firestore.Timestamp.fromDate(endTime))
       .get();
 
-    return Promise.all(snapshot.docs.map(async doc => {
+    return snapshot.docs.map(doc => {
       const data = doc.data();
-      const businessDoc = await this.getBusinessData(businessId);
-      const businessServices = businessDoc?.services || [];
-      const appointmentService = businessServices.find(s => s.id === data.serviceId);
-      
       return {
         id: doc.id,
         startTime: data.startTime,
-        duration: appointmentService?.duration || 30
+        duration: data.serviceDuration || 30,
+        customerName: data.customerName,
+        serviceName: data.serviceName,
+        status: data.status
       };
-    }));
+    });
   }
 
   static async checkOverlappingAppointments(businessId, startTime, endTime) {
@@ -388,33 +387,42 @@ class FirebaseApi {
       const appointmentRef = firestore().collection('appointments').doc();
       const appointmentId = appointmentRef.id;
 
-      // Create the appointment
-      transaction.set(appointmentRef, {
+      // Get customer data
+      const customerDoc = await transaction.get(firestore().collection('users').doc(customerId));
+      const customerData = customerDoc.data();
+
+      // Get business and service data
+      const businessDoc = await transaction.get(firestore().collection('businesses').doc(businessId));
+      const businessData = businessDoc.data();
+      const serviceData = businessData.services[serviceId];
+
+      if (!serviceData) {
+        throw new Error(`Service ${serviceId} not found in business ${businessId}`);
+      }
+
+      // Create the appointment with denormalized data
+      const now = firestore.Timestamp.now();
+      const appointmentData = {
         businessId,
+        createdAt: now,
         customerId,
+        customerName: customerData.name,
+        customerPhone: customerData.phone || customerData.phoneNumber,
+        serviceDuration: serviceData.duration,
         serviceId,
+        serviceName: serviceData.name,
+        servicePrice: serviceData.price,
         startTime,
         status: 'pending',
-        notes,
-        createdAt: firestore.Timestamp.now(),
-        updatedAt: firestore.Timestamp.now()
-      });
+        updatedAt: now
+      };
 
-      // Add to user's appointments
-      const userAppointmentRef = firestore()
-        .collection('users')
-        .doc(customerId)
-        .collection('appointments')
-        .doc(appointmentId);
+      // Only add notes if it's not null
+      if (notes !== null) {
+        appointmentData.notes = notes;
+      }
 
-      transaction.set(userAppointmentRef, {
-        appointmentId,
-        businessId,
-        serviceId,
-        startTime,
-        status: 'pending',
-        createdAt: firestore.Timestamp.now()
-      });
+      transaction.set(appointmentRef, appointmentData);
 
       return appointmentId;
     });
@@ -488,21 +496,150 @@ class FirebaseApi {
   }
 
   static async addToFavorites(userId, businessId) {
-    await firestore()
-      .collection('users')
-      .doc(userId)
-      .update({
-        favorites: firestore.FieldValue.arrayUnion(businessId)
-      });
+    try {
+      await firestore()
+        .collection('users')
+        .doc(userId)
+        .update({
+          favorites: firestore.FieldValue.arrayUnion(businessId),
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+      return true;
+    } catch (error) {
+      console.error('Error adding to favorites:', error);
+      throw error;
+    }
   }
 
   static async removeFromFavorites(userId, businessId) {
-    await firestore()
-      .collection('users')
-      .doc(userId)
-      .update({
-        favorites: firestore.FieldValue.arrayRemove(businessId)
-      });
+    try {
+      await firestore()
+        .collection('users')
+        .doc(userId)
+        .update({
+          favorites: firestore.FieldValue.arrayRemove(businessId),
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+      return true;
+    } catch (error) {
+      console.error('Error removing from favorites:', error);
+      throw error;
+    }
+  }
+
+  // Favorites methods
+  static async getFavoriteBusinesses() {
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
+        return [];
+      }
+
+      // Get user's favorites
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+
+      const favorites = userDoc.data()?.favorites || [];
+
+      if (favorites.length === 0) {
+        return [];
+      }
+
+      // Fetch business details for each favorite
+      const businessesPromises = favorites.map(businessId =>
+        firestore()
+          .collection('businesses')
+          .doc(businessId)
+          .get()
+      );
+
+      const businessesSnapshots = await Promise.all(businessesPromises);
+      return businessesSnapshots
+        .filter(doc => doc.exists)
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          image: { uri: doc.data().images?.[0] || '' }
+        }));
+    } catch (error) {
+      console.error('Error fetching favorite businesses:', error);
+      throw error;
+    }
+  }
+
+  static async addFavorite(businessId) {
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser) throw new Error('User not authenticated');
+
+      await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .update({
+          favorites: firestore.FieldValue.arrayUnion(businessId),
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      return true;
+    } catch (error) {
+      console.error('Error adding favorite:', error);
+      throw error;
+    }
+  }
+
+  static async removeFavorite(businessId) {
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser) throw new Error('User not authenticated');
+
+      // First get current favorites
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+
+      const currentFavorites = userDoc.data()?.favorites || [];
+      console.log('Current favorites before removal:', currentFavorites);
+      console.log('Attempting to remove businessId:', businessId);
+
+      // Remove the businessId using filter
+      const updatedFavorites = currentFavorites.filter(id => id !== businessId);
+      console.log('Updated favorites after removal:', updatedFavorites);
+
+      // Update with the new array
+      await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .update({
+          favorites: updatedFavorites,
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+
+      return true;
+    } catch (error) {
+      console.error('Error removing favorite:', error);
+      throw error;
+    }
+  }
+
+  static async isFavorite(businessId) {
+    try {
+      const currentUser = auth().currentUser;
+      if (!currentUser) return false;
+
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+
+      const favorites = userDoc.data()?.favorites || [];
+      return favorites.includes(businessId);
+    } catch (error) {
+      console.error('Error checking favorite status:', error);
+      return false;
+    }
   }
 
   // Authentication methods
@@ -683,15 +820,12 @@ class FirebaseApi {
   }
 
   // Timestamp utility methods
-  static getServerTimestamp() {
-    return firestore.FieldValue.serverTimestamp();
+  static getTimestampFromDate(date) {
+    return firestore.Timestamp.fromDate(date);
   }
 
-  static createTimestamp(date) {
-    if (!date || !(date instanceof Date)) {
-      throw new Error('createTimestamp requires a valid Date object');
-    }
-    return firestore.Timestamp.fromDate(date);
+  static getServerTimestamp() {
+    return firestore.FieldValue.serverTimestamp();
   }
 
   static async getAppointmentsForDate(businessId, date) {
@@ -708,8 +842,8 @@ class FirebaseApi {
       endOfDay.setHours(23, 59, 59, 999);
 
       // Convert to Firestore Timestamps
-      const startTimestamp = this.createTimestamp(startOfDay);
-      const endTimestamp = this.createTimestamp(endOfDay);
+      const startTimestamp = this.getTimestampFromDate(startOfDay);
+      const endTimestamp = this.getTimestampFromDate(endOfDay);
 
       const appointmentsQuery = await firestore()
         .collection('appointments')
@@ -812,28 +946,49 @@ class FirebaseApi {
     return appointmentDoc.exists ? { id: appointmentDoc.id, ...appointmentDoc.data() } : null;
   }
 
-  static async getAvailableSlots(businessId, startDate, endDate) {
-    const slots = [];
-    const currentDate = new Date(startDate);
+  static async getAvailableSlots(businessId, date) {
+    const dateStr = date.toISOString().split('T')[0];
+    
+    const availableSlotsDoc = await firestore()
+      .collection('businesses')
+      .doc(businessId)
+      .collection('availableSlots')
+      .doc(dateStr)
+      .get();
 
-    while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      const slotsDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .collection('availableSlots')
-        .doc(dateStr)
-        .get();
-
-      if (slotsDoc.exists) {
-        const daySlots = slotsDoc.data().slots || [];
-        slots.push(...daySlots);
-      }
-
-      currentDate.setDate(currentDate.getDate() + 1);
+    if (!availableSlotsDoc.exists || !availableSlotsDoc.data()?.slots) {
+      return [];
     }
 
-    return slots;
+    const slotIds = availableSlotsDoc.data().slots;
+    const appointmentDocs = await Promise.all(
+      slotIds.map(id => 
+        firestore()
+          .collection('appointments')
+          .doc(id)
+          .get()
+      )
+    );
+
+    return appointmentDocs
+      .filter(doc => doc.exists && doc.data().status === 'available')
+      .map(doc => {
+        const data = doc.data();
+        const startTime = data.startTime.toDate();
+        return {
+          id: doc.id,
+          time: startTime,
+          formattedTime: startTime.toLocaleTimeString('he-IL', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }),
+          serviceName: data.serviceName,
+          servicePrice: data.servicePrice,
+          serviceDuration: data.serviceDuration
+        };
+      })
+      .sort((a, b) => a.time - b.time);
   }
 
   static async rescheduleAppointment(appointmentId, newDate) {
@@ -842,40 +997,21 @@ class FirebaseApi {
       throw new Error('Appointment not found');
     }
 
-    const batch = firestore().batch();
-
-    // Update appointment
+    // Update appointment time and status together
     const appointmentRef = firestore().collection('appointments').doc(appointmentId);
-    batch.update(appointmentRef, {
+    await appointmentRef.update({
       startTime: newDate,
-      updatedAt: this.getServerTimestamp()
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+      status: 'pending'
     });
-
-    // Update old slot availability
-    const oldDateStr = appointment.startTime.toDate().toISOString().split('T')[0];
-    const oldSlotRef = firestore()
-      .collection('businesses')
-      .doc(appointment.businessId)
-      .collection('availableSlots')
-      .doc(oldDateStr);
-
-    // Update new slot availability
-    const newDateStr = newDate.toISOString().split('T')[0];
-    const newSlotRef = firestore()
-      .collection('businesses')
-      .doc(appointment.businessId)
-      .collection('availableSlots')
-      .doc(newDateStr);
-
-    // Execute batch
-    await batch.commit();
 
     // Send notifications
     await this.sendAppointmentUpdateNotification(appointment.customerId, {
       type: 'reschedule',
       appointmentId,
       oldDate: appointment.startTime.toDate(),
-      newDate
+      newDate,
+      status: 'pending'
     });
   }
 
@@ -946,7 +1082,7 @@ class FirebaseApi {
       .doc(businessId)
       .update({
         schedule: scheduleData,
-        updatedAt: this.getServerTimestamp()
+        updatedAt: this.getServerTimestamp(),
       });
   }
 
@@ -1071,6 +1207,137 @@ class FirebaseApi {
       }));
     } catch (error) {
       console.error('Error getting user appointments:', error);
+      throw error;
+    }
+  }
+
+  static async getAppointmentsWithFullData(businessId) {
+    try {
+      const appointmentsSnapshot = await firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .get();
+
+      if (appointmentsSnapshot.empty) {
+        return [];
+      }
+
+      const appointments = [];
+      
+      for (const doc of appointmentsSnapshot.docs) {
+        const appointment = {
+          id: doc.id,
+          ...doc.data()
+        };
+
+        // Get customer data if not denormalized
+        if (!appointment.customerName) {
+          try {
+            const customerDoc = await firestore()
+              .collection('users')
+              .doc(appointment.customerId)
+              .get();
+            
+            if (customerDoc.exists) {
+              const customerData = customerDoc.data();
+              appointment.customerName = customerData.name;
+              appointment.customerPhone = customerData.phone || customerData.phoneNumber;
+            }
+          } catch (error) {
+            console.error('Error fetching customer data:', error);
+          }
+        }
+
+        // Get service data if not denormalized
+        if (!appointment.serviceName) {
+          try {
+            const serviceDoc = await firestore()
+              .collection('services')
+              .doc(appointment.serviceId)
+              .get();
+            
+            if (serviceDoc.exists) {
+              const serviceData = serviceDoc.data();
+              appointment.serviceName = serviceData.name;
+              appointment.servicePrice = serviceData.price;
+              appointment.serviceDuration = serviceData.duration;
+            }
+          } catch (error) {
+            console.error('Error fetching service data:', error);
+          }
+        }
+
+        // Add formatted date and time
+        if (appointment.startTime) {
+          const date = appointment.startTime.toDate();
+          appointment.formattedDate = date.toLocaleDateString('he-IL');
+          appointment.time = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        appointments.push(appointment);
+      }
+
+      return appointments;
+    } catch (error) {
+      console.error('Error in getAppointmentsWithFullData:', error);
+      throw error;
+    }
+  }
+
+  static async cancelAppointment(appointmentId) {
+    try {
+      // Get the appointment data
+      const appointmentDoc = await firestore()
+        .collection('appointments')
+        .doc(appointmentId)
+        .get();
+
+      if (!appointmentDoc.exists) {
+        throw new Error('התור לא נמצא');
+      }
+
+      const appointmentData = appointmentDoc.data();
+      
+      // Get the business settings
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(appointmentData.businessId)
+        .get();
+
+      if (!businessDoc.exists) {
+        throw new Error('העסק לא נמצא');
+      }
+
+      const businessData = businessDoc.data();
+      const { scheduleSettings } = businessData;
+
+      // Check if cancellation is allowed by business settings
+      if (!scheduleSettings.allowCancellation) {
+        throw new Error('ביטול תורים אינו מורשה. אנא צור קשר עם העסק.');
+      }
+
+      // Check cancellation time limit
+      const appointmentTime = appointmentData.startTime.toDate();
+      const now = new Date();
+      const hoursUntilAppointment = (appointmentTime - now) / (1000 * 60 * 60);
+
+      if (hoursUntilAppointment < scheduleSettings.cancellationTimeLimit) {
+        throw new Error(`לא ניתן לבטל תור פחות מ-${scheduleSettings.cancellationTimeLimit} שעות לפני מועד התור`);
+      }
+
+      // Update appointment status to canceled
+      await firestore()
+        .collection('appointments')
+        .doc(appointmentId)
+        .update({
+          status: 'canceled',
+          canceledAt: firestore.FieldValue.serverTimestamp(),
+          lastUpdated: firestore.FieldValue.serverTimestamp()
+        });
+
+      return true;
+    } catch (error) {
+      console.error('Error in cancelAppointment:', error);
       throw error;
     }
   }

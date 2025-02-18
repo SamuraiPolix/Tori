@@ -98,150 +98,163 @@ export default function BusinessSettings({ navigation }) {
     }
   };
 
-  const renderGeneralTab = () => (
-    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Ionicons name="create" size={28} color="#2563eb" style={styles.headerIcon} />
-        <Text style={styles.headerTitle}>פרטי העסק</Text>
-      </View>
-      <Text style={styles.headerSubtitle}>
-        הזן את הפרטים הבסיסיים של העסק שלך 🏪
-      </Text>
-
-      <View style={styles.card}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>
-            <Ionicons name="storefront" size={16} color="#64748b" /> שם העסק
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={businessData.name}
-            onChangeText={(text) => setBusinessData({...businessData, name: text})}
-            placeholder="לדוגמה: המספרה של יוסי"
-            placeholderTextColor="#94a3b8"
-            textAlign="right"
-          />
+  const renderGeneralTab = () => {
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={styles.loadingText}>טוען נתונים...</Text>
         </View>
+      );
+    }
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>
-            <Ionicons name="call" size={16} color="#64748b" /> טלפון העסק
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={businessData.phone}
-            onChangeText={(text) => setBusinessData({...businessData, phone: text})}
-            placeholder="הזן מספר טלפון"
-            placeholderTextColor="#94a3b8"
-            textAlign="right"
-            keyboardType="phone-pad"
-          />
+    if (!businessData) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>לא נמצאו נתוני עסק</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadBusinessData}>
+            <Text style={styles.retryButtonText}>נסה שוב</Text>
+          </TouchableOpacity>
         </View>
+      );
+    }
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>
-            <Ionicons name="mail" size={16} color="#64748b" /> דוא״ל
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={businessData.email}
-            onChangeText={(text) => setBusinessData({...businessData, email: text})}
-            placeholder="your@email.com"
-            placeholderTextColor="#94a3b8"
-            textAlign="right"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
+    return (
+      <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <Ionicons name="create" size={28} color="#2563eb" style={styles.headerIcon} />
+          <Text style={styles.headerTitle}>פרטי העסק</Text>
         </View>
+        <Text style={styles.headerSubtitle}>
+          הזן את הפרטים הבסיסיים של העסק שלך 🏪
+        </Text>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>
-            <Ionicons name="location" size={16} color="#64748b" /> כתובת העסק
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={businessData.address}
-            onChangeText={(text) => setBusinessData({...businessData, address: text})}
-            placeholder="הזן את כתובת העסק המלאה"
-            placeholderTextColor="#94a3b8"
-            textAlign="right"
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>
-            <Ionicons name="document-text-outline" size={16} color="#64748b" /> אודות העסק
-          </Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={businessData.about}
-            onChangeText={(text) => setBusinessData({...businessData, about: text})}
-            placeholder="ספר ללקוחות על העסק שלך, השירותים שאתה מציע והניסיון שלך..."
-            placeholderTextColor="#94a3b8"
-            textAlign="right"
-            multiline
-            numberOfLines={4}
-          />
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Ionicons name="cog" size={24} color="#2563eb" />
-          <Text style={styles.cardTitle}>הגדרות נוספות</Text>
-        </View>
-
-        <View style={styles.settingItem}>
-          <View style={styles.settingText}>
-            <Text style={styles.settingTitle}>
-              התראות
+        <View style={styles.card}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>
+              <Ionicons name="storefront" size={16} color="#64748b" /> שם העסק
             </Text>
-            <Text style={styles.settingDescription}>קבל התראות על הזמנות חדשות</Text>
+            <TextInput
+              style={styles.input}
+              value={businessData.name}
+              onChangeText={(text) => setBusinessData({...businessData, name: text})}
+              placeholder="לדוגמה: המספרה של יוסי"
+              placeholderTextColor="#94a3b8"
+              textAlign="right"
+            />
           </View>
-          <Switch
-            value={businessData.settings.notificationsEnabled}
-            onValueChange={(value) => 
-              setBusinessData({
-                ...businessData, 
-                settings: {...businessData.settings, notificationsEnabled: value}
-              })
-            }
-            trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-            thumbColor={businessData.settings.notificationsEnabled ? '#2563eb' : '#94a3b8'}
-          />
-        </View>
 
-        <View style={styles.settingItem}>
-          <View style={styles.settingText}>
-            <Text style={styles.settingTitle}>
-              אישור אוטומטי
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>
+              <Ionicons name="call" size={16} color="#64748b" /> טלפון העסק
             </Text>
-            <Text style={styles.settingDescription}>אשר הזמנות באופן אוטומטי</Text>
+            <TextInput
+              style={styles.input}
+              value={businessData.phone}
+              onChangeText={(text) => setBusinessData({...businessData, phone: text})}
+              placeholder="הזן מספר טלפון"
+              placeholderTextColor="#94a3b8"
+              textAlign="right"
+              keyboardType="phone-pad"
+            />
           </View>
-          <Switch
-            value={businessData.settings.autoConfirm}
-            onValueChange={(value) => 
-              setBusinessData({
-                ...businessData, 
-                settings: {...businessData.settings, autoConfirm: value}
-              })
-            }
-            trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-            thumbColor={businessData.settings.autoConfirm ? '#2563eb' : '#94a3b8'}
-          />
-        </View>
-      </View>
-    </ScrollView>
-  );
 
-  // if (loading || !businessData) {
-  //   return (
-  //     <View style={styles.loadingContainer}>
-  //       <ActivityIndicator size="large" color="#2196F3" />
-  //       <Text style={styles.loadingText}>טוען נתונים...</Text>
-  //     </View>
-  //   );
-  // }
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>
+              <Ionicons name="mail" size={16} color="#64748b" /> דוא״ל
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={businessData.email}
+              onChangeText={(text) => setBusinessData({...businessData, email: text})}
+              placeholder="your@email.com"
+              placeholderTextColor="#94a3b8"
+              textAlign="right"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>
+              <Ionicons name="location" size={16} color="#64748b" /> כתובת העסק
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={businessData.address}
+              onChangeText={(text) => setBusinessData({...businessData, address: text})}
+              placeholder="הזן את כתובת העסק המלאה"
+              placeholderTextColor="#94a3b8"
+              textAlign="right"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>
+              <Ionicons name="document-text-outline" size={16} color="#64748b" /> אודות העסק
+            </Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={businessData.about}
+              onChangeText={(text) => setBusinessData({...businessData, about: text})}
+              placeholder="ספר ללקוחות על העסק שלך, השירותים שאתה מציע והניסיון שלך..."
+              placeholderTextColor="#94a3b8"
+              textAlign="right"
+              multiline
+              numberOfLines={4}
+            />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="cog" size={24} color="#2563eb" />
+            <Text style={styles.cardTitle}>הגדרות נוספות</Text>
+          </View>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>
+                התראות
+              </Text>
+              <Text style={styles.settingDescription}>קבל התראות על הזמנות חדשות</Text>
+            </View>
+            <Switch
+              value={businessData.settings.notificationsEnabled}
+              onValueChange={(value) => 
+                setBusinessData({
+                  ...businessData, 
+                  settings: {...businessData.settings, notificationsEnabled: value}
+                })
+              }
+              trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+              thumbColor={businessData.settings.notificationsEnabled ? '#2563eb' : '#94a3b8'}
+            />
+          </View>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>
+                אישור אוטומטי
+              </Text>
+              <Text style={styles.settingDescription}>אשר הזמנות באופן אוטומטי</Text>
+            </View>
+            <Switch
+              value={businessData.settings.autoConfirm}
+              onValueChange={(value) => 
+                setBusinessData({
+                  ...businessData, 
+                  settings: {...businessData.settings, autoConfirm: value}
+                })
+              }
+              trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+              thumbColor={businessData.settings.autoConfirm ? '#2563eb' : '#94a3b8'}
+            />
+          </View>
+        </View>
+      </ScrollView>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -534,5 +547,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: FontFamily.rubikRegular,
     color: '#64748b',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: FontFamily.rubikRegular,
+    color: '#64748b',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontFamily: FontFamily.rubikSemiBold,
   },
 });

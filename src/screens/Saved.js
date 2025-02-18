@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, StyleSheet, ScrollView, TouchableOpacity, I18nManager, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, SafeAreaView, StyleSheet, ScrollView, TouchableOpacity, I18nManager, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
@@ -61,12 +61,13 @@ const Saved = ({ navigation }) => {
       const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) return;
 
-      await FirebaseApi.removeFavorite(currentUser.uid, businessId);
+      await FirebaseApi.removeFromFavorites(currentUser.uid, businessId);
       
       // Update local state
       setSavedBusinesses(prev => prev.filter(business => business.id !== businessId));
     } catch (error) {
       console.error('Error removing favorite:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בהסרת העסק מהמועדפים');
     }
   };
 
