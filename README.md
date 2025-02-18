@@ -58,6 +58,60 @@ npm start
 npm run ios
 ```
 
+## Running Multiple Emulators
+
+To test both business and customer views simultaneously, you can run two emulators at the same time. Here's how:
+
+### Starting Multiple Emulators
+
+You can start multiple emulators either through command line or Android Studio:
+
+#### Using Command Line:
+```bash
+# List available emulators
+emulator -list-avds
+
+# Start the first emulator
+emulator -avd <Emulator_Name_1> &
+
+# Start the second emulator
+emulator -avd <Emulator_Name_2> &
+```
+
+#### Using Android Studio:
+1. Open Android Studio
+2. Go to Device Manager
+3. Launch or duplicate an existing emulator
+4. Start both emulators
+
+### Verify Emulators
+Check that both emulators are running:
+```bash
+adb devices
+```
+
+You should see something like:
+```
+List of devices attached
+emulator-5554   device
+emulator-5556   device
+```
+
+### Running the App on Both Emulators
+Run these commands in separate terminals to start the app on each emulator:
+
+```bash
+# For the first emulator (e.g., for business view)
+npx expo start --port 8082
+
+# For the second emulator (e.g., for customer view)
+npx expo start --port 8083
+```
+
+Then, press Shift + A to select the emulator on each terminal or open Expo Go on each emulator and you will see the Expo app running
+
+This allows you to test business and customer interactions in real-time.
+
 ## Features
 
 - 📅 Appointment Management

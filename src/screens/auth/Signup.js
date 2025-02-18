@@ -16,8 +16,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Color, FontFamily, Border } from "../../styles/GlobalStyles";
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 import { storeUserData } from "../../utils/userStorage";
 
 // Enable RTL
@@ -75,48 +74,13 @@ const Signup = ({ navigation }) => {
 
     try {
       setIsLoading(true);
-      // Create user with email and password
-      const { user } = await auth().createUserWithEmailAndPassword(formData.email, formData.password);
-
-      // Update user profile with display name
-      await user.updateProfile({
-        displayName: formData.name.trim()
-      });
-
-      // Save user data to Firestore
-      const userDocRef = firestore().collection('users').doc(user.uid);
-      const userData = {
-        uid: user.uid,
-        name: formData.name.trim(),
-        email: formData.email,
-        phoneNumber: null,
-        createdAt: firestore.Timestamp.now(),
-        updatedAt: firestore.Timestamp.now(),
-        lastLogin: firestore.Timestamp.now()
-      };
-      await userDocRef.set(userData);
-
-      // Store user data locally
+      const { user, userData } = await FirebaseApi.signUp(formData.email, formData.password, formData.name);
       await storeUserData(userData);
-
-      // Send email verification
-      await user.sendEmailVerification();
-
-      // Show success message
-      Alert.alert(
-        'הרשמה הצליחה',
-        'נשלח אליך מייל אימות. אנא אמת את כתובת המייל שלך.',
-        [
-          {
-            text: 'אישור',
-            onPress: () => navigation.navigate('Home')
-          }
-        ]
-      );
+      navigation.navigate('Home');
     } catch (error) {
-      console.error('Registration Error:', error);
+      console.error('Signup Error:', error);
       let errorMessage = 'אירעה שגיאה בתהליך ההרשמה';
-
+      
       switch (error.code) {
         case 'auth/email-already-in-use':
           errorMessage = 'כתובת האימייל כבר קיימת במערכת';
@@ -131,7 +95,7 @@ const Signup = ({ navigation }) => {
           errorMessage = 'הסיסמה חלשה מדי';
           break;
       }
-
+      
       Alert.alert('שגיאה בהרשמה', errorMessage);
     } finally {
       setIsLoading(false);

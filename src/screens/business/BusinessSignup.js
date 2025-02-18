@@ -16,8 +16,7 @@ import {
 } from "react-native";
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import { Ionicons } from '@expo/vector-icons';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
@@ -175,11 +174,10 @@ const BusinessSignupScreen = ({ navigation, route }) => {
 
     setIsSubmitting(true);
     try {
-      // יצירת משתמש חדש עם Firebase Auth
-      const { user } = await auth().createUserWithEmailAndPassword(formData.email, formData.password);
+      // Create new user with Firebase Auth
+      const user = await FirebaseApi.createUserWithEmailAndPassword(formData.email, formData.password);
 
-      // יצירת אובייקט עם כל הנתונים הנדרשים לעסק
-      const timestamp = new Date();
+      // Create business data object
       const businessData = {
         businessId: user.uid,
         name: formData.businessName.trim(),
@@ -200,40 +198,23 @@ const BusinessSignupScreen = ({ navigation, route }) => {
           wednesday: { open: '09:00', close: '17:00', isOpen: true },
           thursday: { open: '09:00', close: '17:00', isOpen: true },
           friday: { open: '09:00', close: '14:00', isOpen: true },
-          saturday: { open: '00:00', close: '00:00', isOpen: false }
+          saturday: { isOpen: false, open: '00:00', close: '00:00' }
         },
-        createdAt: timestamp,
-        updatedAt: timestamp
+        createdAt: FirebaseApi.getServerTimestamp(),
+        updatedAt: FirebaseApi.getServerTimestamp(),
+        role: 'business',
+        status: 'active'
       };
 
-      // שמירת נתוני העסק ב-Firestore
-      await firestore()
-        .collection('businesses')
-        .doc(user.uid)
-        .set(businessData);
+      // Create business document in Firestore
+      await FirebaseApi.createBusinessProfile(user.uid, businessData);
 
-      // עדכון פרופיל המשתמש
-      await user.updateProfile({
-        displayName: formData.businessName
-      });
-
-      // מעבר למסך הגדרת פרופיל העסק
-      navigation.reset({
-        index: 0,
-        routes: [
-          { 
-            name: 'BusinessProfileSetup',
-            params: { 
-              businessId: user.uid,
-              businessData: businessData
-            }
-          }
-        ],
-      });
+      // Navigate to business profile setup
+      navigation.navigate('BusinessProfileSetup', { businessData });
     } catch (error) {
-      console.error('Registration Error:', error);
-      let errorMessage = 'אירעה שגיאה בתהליך ההרשמה';
-
+      console.error('Error creating business account:', error);
+      let errorMessage = 'אירעה שגיאה ביצירת החשבון';
+      
       switch (error.code) {
         case 'auth/email-already-in-use':
           errorMessage = 'כתובת האימייל כבר קיימת במערכת';
@@ -248,9 +229,8 @@ const BusinessSignupScreen = ({ navigation, route }) => {
           errorMessage = 'הסיסמה חלשה מדי';
           break;
       }
-
-      Alert.alert('שגיאה בהרשמה', errorMessage);
-      setErrors({ submit: errorMessage });
+      
+      Alert.alert('שגיאה', errorMessage);
     } finally {
       setIsSubmitting(false);
     }

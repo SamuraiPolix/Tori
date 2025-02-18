@@ -3,9 +3,24 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useFonts } from "expo-font";
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { I18nManager } from 'react-native';
+
+// Disable Firebase v22 warnings for now
+LogBox.ignoreLogs([
+  'NOBRIDGE',
+  '(NOBRIDGE) WARN', 
+  'This method is deprecated',
+  'React Native Firebase namespaced API',
+  'This method is deprecated (as well as all React Native Firebase namespaced API)',
+  'Please use `getApp()`',
+  'Please use `collection()`',
+  'Please use `doc()`',
+  'Please use `Timestamp`',
+  'Please use `orderBy()`',
+  'Please use `where()`',
+]);
 
 // Enable RTL
 I18nManager.allowRTL(true);

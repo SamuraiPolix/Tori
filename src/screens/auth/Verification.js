@@ -9,10 +9,12 @@ import {
   I18nManager,
   Alert,
   Modal,
-  Animated
+  Animated,
+  ActivityIndicator
 } from "react-native";
 import { Image } from "expo-image";
 import { Color, FontFamily, Border } from "../../styles/GlobalStyles";
+import FirebaseApi from '../../utils/FirebaseApi';
 
 // Enable RTL
 I18nManager.allowRTL(true);
@@ -21,10 +23,13 @@ I18nManager.forceRTL(true);
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const VerificationScreen = ({ navigation, route }) => {
-  const [verificationCode, setVerificationCode] = React.useState(['', '', '', '']);
+  const [verificationCode, setVerificationCode] = React.useState(['', '', '', '', '', '']);
   const [showSuccessModal, setShowSuccessModal] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const phoneNumber = route.params?.phoneNumber || '';
+  const confirmation = route.params?.confirmation;
+  const [timeLeft, setTimeLeft] = React.useState(120); // 2 minutes in seconds
 
   React.useEffect(() => {
     if (showSuccessModal) {
@@ -36,13 +41,39 @@ const VerificationScreen = ({ navigation, route }) => {
     }
   }, [showSuccessModal]);
 
-  const handleConfirm = () => {
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prevTime) => {
+        if (prevTime <= 0) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prevTime - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleConfirm = async () => {
     const code = verificationCode.join('');
-    if (code.length === 4) {
-      // Add verification logic here
-      console.log('Verifying code:', code);
-      // Simulating successful verification
-      setShowSuccessModal(true);
+    if (code.length === 6) {
+      try {
+        setIsLoading(true);
+        await FirebaseApi.verifyCode(confirmation, code);
+        setShowSuccessModal(true);
+      } catch (error) {
+        console.error('Verification Error:', error);
+        Alert.alert('שגיאה', 'קוד האימות שהוזן שגוי');
+      } finally {
+        setIsLoading(false);
+      }
     } else {
       Alert.alert('שגיאה', 'נא להזין קוד אימות מלא');
     }
@@ -53,9 +84,37 @@ const VerificationScreen = ({ navigation, route }) => {
     navigation.navigate('Home');
   };
 
-  const handleResend = () => {
-    console.log('Resending code to:', phoneNumber);
-    Alert.alert('הודעה', 'קוד חדש נשלח למספר הטלפון שלך');
+  const handleResend = async () => {
+    try {
+      setIsLoading(true);
+      const newConfirmation = await FirebaseApi.sendVerificationCode(phoneNumber);
+      route.params.confirmation = newConfirmation;
+      setTimeLeft(120); // Reset timer
+      Alert.alert('הודעה', 'קוד חדש נשלח למספר הטלפון שלך');
+    } catch (error) {
+      console.error('Resend Error:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשליחת הקוד החדש');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (number) => {
+    const currentIndex = verificationCode.findIndex(digit => digit === '');
+    if (currentIndex !== -1) {
+      const newCode = [...verificationCode];
+      newCode[currentIndex] = number.toString();
+      setVerificationCode(newCode);
+    }
+  };
+
+  const handleDelete = () => {
+    const lastFilledIndex = verificationCode.map(digit => digit !== '').lastIndexOf(true);
+    if (lastFilledIndex !== -1) {
+      const newCode = [...verificationCode];
+      newCode[lastFilledIndex] = '';
+      setVerificationCode(newCode);
+    }
   };
 
   return (
@@ -93,108 +152,97 @@ const VerificationScreen = ({ navigation, route }) => {
         </View>
 
         {/* Timer */}
-        <Text style={styles.timerText}>הקוד יפוג בעוד 02:00 ⏱️</Text>
+        <Text style={styles.timerText}>
+          {timeLeft > 0 ? `הקוד יפוג בעוד ${formatTime(timeLeft)} ⏱️` : 'הקוד פג תוקף'}
+        </Text>
+
+        {/* Resend Button */}
+        {timeLeft === 0 && (
+          <TouchableOpacity 
+            style={styles.resendButton}
+            onPress={handleResend}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={Color.primary} />
+            ) : (
+              <Text style={styles.resendText}>שלח קוד חדש</Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Numeric Keyboard */}
         <View style={styles.keyboardContainer}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((number) => (
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, 'delete'].map((item, index) => (
             <TouchableOpacity
-              key={number}
-              style={styles.keyButton}
+              key={index}
+              style={[
+                styles.keyButton,
+                !item && styles.keyButtonHidden,
+                item === 'delete' && styles.deleteButton
+              ]}
               onPress={() => {
-                const firstEmptyIndex = verificationCode.findIndex(d => d === '');
-                if (firstEmptyIndex !== -1) {
-                  const newCode = [...verificationCode];
-                  newCode[firstEmptyIndex] = number.toString();
-                  setVerificationCode(newCode);
+                if (item === 'delete') {
+                  handleDelete();
+                } else if (item !== null) {
+                  handleKeyPress(item);
                 }
               }}
+              disabled={!item || isLoading}
             >
-              <Text style={styles.keyText}>{number}</Text>
+              {item === 'delete' ? (
+                <Image
+                  style={styles.deleteIcon}
+                  contentFit="cover"
+                  source={require("../../assets/ic--delete.png")}
+                />
+              ) : (
+                item !== null && <Text style={styles.keyText}>{item}</Text>
+              )}
             </TouchableOpacity>
           ))}
-          <TouchableOpacity
-            style={styles.keyButton}
-            onPress={() => {
-              const lastFilledIndex = verificationCode.slice().reverse().findIndex(d => d !== '');
-              if (lastFilledIndex !== -1) {
-                const newCode = [...verificationCode];
-                newCode[verificationCode.length - 1 - lastFilledIndex] = '';
-                setVerificationCode(newCode);
-              }
-            }}
-          >
-            <Image
-              style={styles.deleteIcon}
-              contentFit="cover"
-              source={require("../../assets/delete.png")}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.keyButton}
-            onPress={() => {
-              const firstEmptyIndex = verificationCode.findIndex(d => d === '');
-              if (firstEmptyIndex !== -1) {
-                const newCode = [...verificationCode];
-                newCode[firstEmptyIndex] = "0";
-                setVerificationCode(newCode);
-              }
-            }}
-          >
-            <Text style={styles.keyText}>0</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Continue Button */}
-        <TouchableOpacity 
-          style={[
-            styles.confirmButton,
-            verificationCode.every(d => d !== '') && styles.confirmButtonActive
-          ]}
+        {/* Confirm Button */}
+        <TouchableOpacity
+          style={[styles.confirmButton, isLoading && styles.confirmButtonDisabled]}
           onPress={handleConfirm}
+          disabled={isLoading || verificationCode.includes('')}
         >
-          <Text style={styles.confirmButtonText}>אימות הקוד ✓</Text>
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.confirmButtonText}>אישור</Text>
+          )}
         </TouchableOpacity>
-
-        {/* Resend Code */}
-        <View style={styles.resendContainer}>
-          <TouchableOpacity onPress={handleResend}>
-            <Text style={styles.resendButton}>שליחת קוד חדש 🔄</Text>
-          </TouchableOpacity>
-          <Text style={styles.resendText}>לא קיבלת את הקוד? </Text>
-        </View>
 
         {/* Success Modal */}
         <Modal
-          animationType="fade"
           transparent={true}
           visible={showSuccessModal}
-          onRequestClose={() => setShowSuccessModal(false)}
+          animationType="fade"
         >
           <View style={styles.modalOverlay}>
             <Animated.View 
               style={[
                 styles.modalContent,
-                {
-                  opacity: fadeAnim,
-                  transform: [{
-                    scale: fadeAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.8, 1]
-                    })
-                  }]
-                }
+                { opacity: fadeAnim }
               ]}
             >
-              <Text style={styles.modalEmoji}>✅</Text>
-              <Text style={styles.modalTitle}>האימות בוצע בהצלחה!</Text>
-              <Text style={styles.modalSubtitle}>ברוכים הבאים לTori</Text>
-              
-              <TouchableOpacity 
+              <Image
+                style={styles.successIcon}
+                contentFit="cover"
+                source={require("../../assets/ic--success.png")}
+              />
+              <Text style={styles.modalTitle}>מצוין!</Text>
+              <Text style={styles.modalText}>
+                המספר אומת בהצלחה
+              </Text>
+              <TouchableOpacity
                 style={styles.modalButton}
                 onPress={handleContinue}
               >
-                <Text style={styles.modalButtonText}>מעבר לאפליקציה 🚀</Text>
+                <Text style={styles.modalButtonText}>המשך</Text>
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -273,6 +321,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: SCREEN_HEIGHT * 0.03,
   },
+  resendButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    width: '100%',
+    marginBottom: SCREEN_HEIGHT * 0.03,
+  },
+  resendText: {
+    fontSize: 16,
+    fontFamily: FontFamily["Assistant-Bold"],
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
   keyboardContainer: {
     width: '100%',
     paddingHorizontal: SCREEN_WIDTH * 0.05,
@@ -292,6 +354,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
   },
+  keyButtonHidden: {
+    opacity: 0,
+  },
+  deleteButton: {
+    backgroundColor: '#FFC080',
+  },
   keyText: {
     fontSize: 24,
     fontFamily: FontFamily["Assistant-Medium"],
@@ -310,28 +378,14 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     marginBottom: 16,
   },
-  confirmButtonActive: {
-    backgroundColor: '#2563EB',
+  confirmButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.5,
   },
   confirmButtonText: {
     color: '#FFFFFF',
     fontFamily: FontFamily["Assistant-Bold"],
     fontSize: 18,
-  },
-  resendContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  resendText: {
-    fontSize: 14,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#64748B',
-  },
-  resendButton: {
-    fontSize: 14,
-    fontFamily: FontFamily["Assistant-Bold"],
-    color: '#2563EB',
   },
   modalOverlay: {
     flex: 1,
@@ -354,8 +408,9 @@ const styles = StyleSheet.create({
     elevation: 5,
     width: SCREEN_WIDTH * 0.85,
   },
-  modalEmoji: {
-    fontSize: 64,
+  successIcon: {
+    width: 64,
+    height: 64,
     marginBottom: 16,
   },
   modalTitle: {
@@ -365,7 +420,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  modalSubtitle: {
+  modalText: {
     fontSize: 16,
     fontFamily: FontFamily["Assistant-Regular"],
     color: '#64748B',

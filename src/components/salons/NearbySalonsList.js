@@ -2,7 +2,7 @@ import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'rea
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import SalonCard from './SalonCard';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 import * as Location from 'expo-location';
 import { getDistance } from 'geolib';
 
@@ -48,135 +48,74 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
 
       // 2. Get haircut category ID
       console.log('3. Fetching haircut category...');
-      const categorySnapshot = await firestore()
-        .collection('categories')
-        .where('name', '==', 'תספורת')
-        .get();
-
-      if (categorySnapshot.empty) {
+      const category = await FirebaseApi.getHaircutCategory();
+      if (!category) {
         console.log('❌ No haircut category found');
         setLoading(false);
         return;
       }
 
-      const categoryData = categorySnapshot.docs[0].data();
-      console.log('✅ Found category:', {
-        id: categorySnapshot.docs[0].id,
-        data: categoryData
-      });
-
-      const categoryId = categoryData.categoryId;
+      console.log('✅ Found category:', category);
+      const categoryId = category.categoryId;
       console.log('🏷️ Using categoryId:', categoryId);
 
       // 3. Get businesses with this category
       console.log('4. Fetching businesses...');
-      const businessesSnapshot = await firestore()
-        .collection('businesses')
-        .where('categories', 'array-contains', categoryId)
-        .get();
-
-      console.log(`📋 Found ${businessesSnapshot.docs.length} businesses`);
+      const businesses = await FirebaseApi.getBusinessesByCategory(categoryId);
+      console.log(`📋 Found ${businesses.length} businesses`);
       console.log('Business details:');
-      businessesSnapshot.docs.forEach((doc, index) => {
-        const data = doc.data();
+      businesses.forEach((business, index) => {
         console.log(`Business ${index + 1}:`, {
-          id: doc.id,
-          name: data.name,
-          hasLocation: !!data.location,
-          coordinates: data.location ? {
-            lat: data.location.latitude,
-            lng: data.location.longitude
+          id: business.id,
+          name: business.name,
+          hasLocation: !!business.location,
+          coordinates: business.location ? {
+            lat: business.location.latitude,
+            lng: business.location.longitude
           } : 'No location data'
         });
       });
 
       // 4. Calculate distances and map business data
       console.log('5. Calculating distances...');
-      const businessesWithDistance = businessesSnapshot.docs.map(doc => {
-        const data = doc.data();
+      const businessesWithDistance = businesses.map(business => {
         let distance = null;
 
-        if (data.location?.latitude && data.location?.longitude) {
+        if (business.location?.latitude && business.location?.longitude) {
           distance = getDistance(
             { 
               latitude: currentLocation.coords.latitude, 
               longitude: currentLocation.coords.longitude 
             },
-            { 
-              latitude: data.location.latitude, 
-              longitude: data.location.longitude 
+            {
+              latitude: business.location.latitude,
+              longitude: business.location.longitude
             }
-          ) / 1000;
+          ) / 1000; // Convert to kilometers
         }
 
         return {
-          id: doc.id,
-          about: data.about || '',
-          address: data.address || '',
-          businessId: doc.id,
-          businessPhone: data.businessPhone || '',
-          categories: data.categories || [],
-          createdAt: data.createdAt || null,
-          email: data.email || '',
-          images: data.images || [],
-          name: data.name || '',
-          ownerName: data.ownerName || '',
-          ownerPhone: data.ownerPhone || '',
-          rating: typeof data.rating === 'number' ? data.rating : 0,
-          reviewsCount: typeof data.reviewsCount === 'number' ? data.reviewsCount : 0,
-          scheduleSettings: {
-            allowCancellation: data.scheduleSettings?.allowCancellation || false,
-            allowSameDayBooking: data.scheduleSettings?.allowSameDayBooking || false,
-            autoApprove: data.scheduleSettings?.autoApprove || false,
-            cancellationTimeLimit: data.scheduleSettings?.cancellationTimeLimit || 0,
-            maxFutureBookingDays: data.scheduleSettings?.maxFutureBookingDays || 30,
-            minTimeBeforeBooking: data.scheduleSettings?.minTimeBeforeBooking || 0,
-            slotDuration: data.scheduleSettings?.slotDuration || 30
-          },
-          services: (data.services || []).map(service => ({
-            duration: service.duration || 30,
-            id: service.id || '',
-            name: service.name || '',
-            price: service.price || 0
-          })),
-          settings: {
-            allowOnlineBooking: data.settings?.allowOnlineBooking || false,
-            autoConfirm: data.settings?.autoConfirm || false,
-            notificationsEnabled: data.settings?.notificationsEnabled || false,
-            reminderTime: data.settings?.reminderTime || 60
-          },
-          updatedAt: data.updatedAt || null,
-          workingHours: data.workingHours || {
-            sunday: { close: '', isOpen: false, open: '' },
-            monday: { close: '', isOpen: false, open: '' },
-            tuesday: { close: '', isOpen: false, open: '' },
-            wednesday: { close: '', isOpen: false, open: '' },
-            thursday: { close: '', isOpen: false, open: '' },
-            friday: { close: '', isOpen: false, open: '' },
-            saturday: { close: '', isOpen: false, open: '' }
-          },
-          distance: distance
+          ...business,
+          distance
         };
       });
 
-      console.log('Mapped business data:', businessesWithDistance[0]);
-
       // 5. Sort by distance and filter out businesses without location
       const sortedBusinesses = businessesWithDistance
-        .filter(b => b.distance !== null)
+        .filter(business => business.distance !== null)
         .sort((a, b) => a.distance - b.distance)
-        .slice(0, 10); // Show only closest 10 businesses
+        .slice(0, 10); // Show only closest 10
 
-      console.log('6. Final sorted businesses:');
-      sortedBusinesses.forEach((business, index) => {
-        console.log(`${index + 1}. ${business.name} - ${business.distance.toFixed(2)}km`);
+      console.log('✅ Processed businesses:', {
+        total: businesses.length,
+        withLocation: businessesWithDistance.filter(b => b.distance !== null).length,
+        displayed: sortedBusinesses.length
       });
 
       setSalons(sortedBusinesses);
-      console.log('=== Finished fetching nearby salons ===');
     } catch (error) {
-      console.error('❌ Error fetching nearby salons:', error);
-      setErrorMsg('Error fetching nearby salons');
+      console.error('Error fetching nearby salons:', error);
+      setErrorMsg('Error fetching salons');
     } finally {
       setLoading(false);
     }

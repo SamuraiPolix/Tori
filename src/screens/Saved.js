@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, StyleSheet, ScrollView, TouchableOpacity, I18nManager, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, SafeAreaView, StyleSheet, ScrollView, TouchableOpacity, I18nManager, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
 import BottomNavigation from '../components/common/BottomNavigation';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // Force RTL
 I18nManager.allowRTL(true);
@@ -21,43 +20,35 @@ const Saved = ({ navigation }) => {
 
   const fetchSavedBusinesses = async () => {
     try {
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) {
         setIsLoading(false);
         return;
       }
 
       // Get user's favorites
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-
-      const favorites = userDoc.data()?.favorites || [];
-
-      if (favorites.length === 0) {
+      const favorites = await FirebaseApi.getUserFavorites(currentUser.uid);
+      if (!favorites || favorites.length === 0) {
         setIsLoading(false);
         return;
       }
 
       // Fetch business details for each favorite
-      const businessesPromises = favorites.map(businessId =>
-        firestore()
-          .collection('businesses')
-          .doc(businessId)
-          .get()
+      const businessesData = await Promise.all(
+        favorites.map(async (businessId) => {
+          const business = await FirebaseApi.getBusinessData(businessId);
+          if (business) {
+            return {
+              id: businessId,
+              ...business,
+              image: { uri: business.images?.[0] || '' }
+            };
+          }
+          return null;
+        })
       );
 
-      const businessesSnapshots = await Promise.all(businessesPromises);
-      const businessesData = businessesSnapshots
-        .filter(doc => doc.exists)
-        .map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          image: { uri: doc.data().images?.[0] || '' }
-        }));
-
-      setSavedBusinesses(businessesData);
+      setSavedBusinesses(businessesData.filter(Boolean));
     } catch (error) {
       console.error('Error fetching saved businesses:', error);
     } finally {
@@ -67,20 +58,16 @@ const Saved = ({ navigation }) => {
 
   const handleRemoveFavorite = async (businessId) => {
     try {
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) return;
 
-      await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .update({
-          favorites: firestore.FieldValue.arrayRemove(businessId)
-        });
-
+      await FirebaseApi.removeFromFavorites(currentUser.uid, businessId);
+      
       // Update local state
       setSavedBusinesses(prev => prev.filter(business => business.id !== businessId));
     } catch (error) {
       console.error('Error removing favorite:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בהסרת העסק מהמועדפים');
     }
   };
 
