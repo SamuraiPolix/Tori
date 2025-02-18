@@ -13,9 +13,7 @@ import {
 import CalendarStrip from 'react-native-calendar-strip';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 import BusinessSidebar from '../../components/BusinessSidebar';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
-import { Alert } from 'react-native';
+import FirebaseApi from '../../utils/FirebaseApi';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const { width } = Dimensions.get('window');
@@ -41,18 +39,14 @@ const BusinessCalendar = ({ navigation }) => {
 
   const fetchBusinessData = async () => {
     try {
-      const businessId = auth().currentUser.uid;
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .get();
+      const businessId = FirebaseApi.getCurrentUser().uid;
+      const data = await FirebaseApi.getBusinessData(businessId);
 
-      if (!businessDoc.exists) {
+      if (!data) {
         setError('לא נמצא מידע על העסק');
         return;
       }
 
-      const data = businessDoc.data();
       console.log('Fetched business data:', {
         workingHours: data.workingHours,
         slotDuration: data.slotDuration
@@ -177,20 +171,6 @@ const BusinessCalendar = ({ navigation }) => {
       // Convert moment date to JS Date if needed
       const jsDate = selectedDate._d ? new Date(selectedDate._d) : new Date(selectedDate);
       
-      // Get start and end of selected date
-      const startOfDay = new Date(jsDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(jsDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      console.log('Fetching appointments for:', {
-        date: jsDate,
-        businessId: businessData.businessId,
-        businessHours: businessData.workingHours,
-        scheduleSettings: businessData.scheduleSettings
-      });
-
       // Get working hours for selected date
       const workingHours = getWorkingHours(selectedDate);
       console.log('Working hours:', workingHours);
@@ -202,16 +182,12 @@ const BusinessCalendar = ({ navigation }) => {
         return;
       }
 
-      // Fetch appointments for selected date
-      const appointmentsQuery = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessData.businessId)
-        .get();
-
-      console.log('Found appointments:', appointmentsQuery.size);
+      // Fetch appointments using FirebaseApi
+      const appointments = await FirebaseApi.getAppointmentsForDate(businessData.businessId, jsDate);
+      console.log('Found appointments:', appointments.length);
 
       // Generate time slots even if there are no appointments
-      if (appointmentsQuery.empty) {
+      if (!appointments.length) {
         console.log('No appointments found, generating empty slots');
         const slots = generateTimeSlots(workingHours, []);
         console.log('Generated slots:', slots);
@@ -225,48 +201,20 @@ const BusinessCalendar = ({ navigation }) => {
         return;
       }
 
-      // Filter appointments for the selected date in memory
-      const filteredAppointments = appointmentsQuery.docs.filter(doc => {
-        const appointmentData = doc.data();
-        if (!appointmentData.startTime) return false;
-        
-        const appointmentDate = new Date(appointmentData.startTime.toDate());
-        return appointmentDate >= startOfDay && appointmentDate <= endOfDay;
-      });
-
-      console.log('Filtered appointments for date:', filteredAppointments.length);
-
       // Get business services for reference
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessData.businessId)
-        .get();
-      
-      const businessServices = businessDoc.exists ? businessDoc.data().services || {} : {};
+      const businessDoc = await FirebaseApi.getBusinessData(businessData.businessId);
+      const businessServices = businessDoc?.services || {};
 
       const appointmentsData = await Promise.all(
-        filteredAppointments.map(async doc => {
-          const appointmentData = doc.data();
-          
+        appointments.map(async appointmentData => {
           // Get customer data
-          let customerData = null;
-          if (appointmentData.customerId) {
-            try {
-              const customerDoc = await firestore()
-                .collection('users')
-                .doc(appointmentData.customerId)
-                .get();
-              customerData = customerDoc.exists ? customerDoc.data() : null;
-            } catch (error) {
-              console.error('Error fetching customer data:', error);
-            }
-          }
+          const customerData = await FirebaseApi.getCustomerData(appointmentData.customerId);
 
           // Get service details
           const service = businessServices[appointmentData.serviceId] || null;
 
           return {
-            id: doc.id,
+            id: appointmentData.id,
             startTime: appointmentData.startTime,
             customerName: customerData?.name || customerData?.fullName || 'לקוח לא ידוע',
             service: service ? {

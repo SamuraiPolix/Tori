@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 import BusinessSidebar from '../../components/BusinessSidebar';
 
 const getDayName = (dateString) => {
@@ -53,190 +52,101 @@ const BusinessCustomers = ({ navigation }) => {
     }
   }, [searchQuery, customers]);
 
+  const fetchBusinessData = async () => {
+    try {
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) return;
+
+      const data = await FirebaseApi.getBusinessData(currentUser.uid);
+      setBusinessData(data);
+    } catch (error) {
+      console.error('Error fetching business data:', error);
+    }
+  };
+
   const fetchCustomers = async () => {
     try {
-      const businessId = auth().currentUser.uid;
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) return;
+
+      const businessId = currentUser.uid;
       console.log('Fetching customers for business:', businessId);
 
-      // מביא את כל התורים של העסק
-      const appointmentsSnapshot = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessId)
-        .get();
+      // Get all business appointments
+      const appointments = await FirebaseApi.getBusinessAllAppointments(businessId);
 
-      // אוסף את כל מזהי הלקוחות הייחודיים
+      // Group appointments by customer
+      const customerAppointmentsMap = new Map();
       const customerIds = new Set();
-      const customerAppointmentsMap = new Map(); // מפה לשמירת התורים לפי לקוח
-      const appointmentsToProcess = []; // Array to store appointments that need service details
 
-      // מעבר על כל התורים וארגון לפי לקוח
-      appointmentsSnapshot.forEach(doc => {
-        const appointment = {
-          id: doc.id,
-          ...doc.data()
-        };
+      appointments.forEach(appointment => {
         const customerId = appointment.customerId;
-        
         if (customerId) {
           customerIds.add(customerId);
-          
-          // מוסיף את התור למערך התורים של הלקוח
           if (!customerAppointmentsMap.has(customerId)) {
             customerAppointmentsMap.set(customerId, []);
           }
           customerAppointmentsMap.get(customerId).push(appointment);
-          
-          // Add to processing queue if it has service info
-          if (appointment.serviceId && appointment.businessId) {
-            appointmentsToProcess.push(appointment);
-          }
         }
       });
 
-      // Process all services in parallel
-      await Promise.all(
-        appointmentsToProcess.map(async (appointment) => {
-          try {
-            const businessDoc = await firestore()
-              .collection('businesses')
-              .doc(appointment.businessId)
-              .get();
-            
-            if (businessDoc.exists) {
-              const businessData = businessDoc.data();
-              const businessServices = businessData.services || {};
-              const service = businessServices[appointment.serviceId];
-              
-              if (service) {
-                appointment.service = {
-                  id: appointment.serviceId,
-                  name: service.name || 'שם שירות לא זמין',
-                  duration: parseInt(service.duration) || 0,
-                  price: parseInt(service.price) || 0
-                };
-              }
-            }
-          } catch (error) {
-            console.error('Error fetching service details:', error);
-          }
-        })
-      );
-
-      console.log('Found unique customers:', customerIds.size);
-
-      // מביא את המידע על כל הלקוחות
+      // Fetch customer data and process appointments
       const customersData = await Promise.all(
         Array.from(customerIds).map(async (customerId) => {
-          // מביא את פרטי הלקוח
-          const customerDoc = await firestore()
-            .collection('users')
-            .doc(customerId)
-            .get();
-
-          if (!customerDoc.exists) {
-            console.log('Customer document does not exist:', customerId);
-            return null;
-          }
-
-          const customerData = customerDoc.data();
-          console.log('Customer data from Firestore:', customerData);
-
-          // בדיקת השדות הנדרשים
-          if (!customerData) {
-            console.log('No customer data found for:', customerId);
-            return null;
-          }
-
-          const fullName = customerData.name || `${customerData.firstName || ''} ${customerData.lastName || ''}`.trim();
-          console.log('Constructed full name:', fullName);
-
-          // מקבל את התורים של הלקוח מהמפה
-          const appointments = customerAppointmentsMap.get(customerId) || [];
+          const customerAppointments = customerAppointmentsMap.get(customerId);
+          const customerData = await FirebaseApi.getUserData(customerId);
           
-          // מיין תורים לפי תאריך (החדש ביותר קודם)
-          appointments.sort((a, b) => {
-            const dateA = a.startTime ? new Date(a.startTime.seconds * 1000) : new Date(0);
-            const dateB = b.startTime ? new Date(b.startTime.seconds * 1000) : new Date(0);
-            return dateB - dateA;
-          });
+          if (!customerData) return null;
 
-          // חישוב סטטיסטיקות
-          let totalSpent = 0;
-          let lastVisit = null;
-          let totalVisits = 0;
-          let canceledAppointments = 0;
+          // Process appointments to include service details
+          const processedAppointments = await Promise.all(
+            customerAppointments.map(async (appointment) => {
+              const serviceDetails = await FirebaseApi.getServiceDetails(
+                appointment.businessId,
+                appointment.serviceId
+              );
 
-          appointments.forEach(appointment => {
-            if (appointment.status === 'completed') {
-              // חישוב סכום כולל
-              if (appointment.service?.price) {
-                totalSpent += Number(appointment.service.price);
-              }
-              
-              // ספירת ביקורים
-              totalVisits++;
-              
-              // עדכון ביקור אחרון
-              const visitDate = appointment.startTime ? new Date(appointment.startTime.seconds * 1000) : null;
-              if (visitDate && (!lastVisit || visitDate > lastVisit)) {
-                lastVisit = visitDate;
-              }
-            } else if (appointment.status === 'canceled') {
-              canceledAppointments++;
-            }
-          });
+              return {
+                ...appointment,
+                service: serviceDetails
+              };
+            })
+          );
+
+          // Sort appointments by date
+          const sortedAppointments = processedAppointments.sort(
+            (a, b) => b.startTime.toDate() - a.startTime.toDate()
+          );
+
+          // Calculate total spent
+          const totalSpent = processedAppointments.reduce(
+            (sum, appointment) => sum + (appointment.service?.price || 0),
+            0
+          );
 
           return {
             id: customerId,
-            name: fullName || 'לקוח לא ידוע',
-            phone: customerData.phoneNumber || customerData.phone || 'מספר לא זמין',
-            email: customerData.email || '',
-            totalVisits,
+            name: customerData.name || customerData.fullName,
+            phone: customerData.phone || customerData.phoneNumber,
+            appointments: sortedAppointments,
+            lastVisit: sortedAppointments[0]?.startTime.toDate(),
             totalSpent,
-            lastVisit,
-            canceledAppointments,
-            recentAppointments: appointments.slice(0, 10) // 10 התורים האחרונים
+            totalVisits: sortedAppointments.length
           };
         })
       );
 
-      // מסנן לקוחות לא קיימים ומיין לפי סכום ההוצאות
+      // Filter out null values and sort by last visit
       const validCustomers = customersData
-        .filter(customer => customer !== null)
-        .sort((a, b) => b.totalSpent - a.totalSpent);
+        .filter(Boolean)
+        .sort((a, b) => (b.lastVisit || 0) - (a.lastVisit || 0));
 
       setCustomers(validCustomers);
       setFilteredCustomers(validCustomers);
-      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching customers:', error);
-      Alert.alert(
-        'שגיאה',
-        'אירעה שגיאה בטעינת רשימת הלקוחות. אנא נסה שוב.',
-        [{ text: 'אישור', style: 'default' }]
-      );
+    } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchBusinessData = async () => {
-    try {
-      const businessId = auth().currentUser?.uid;
-      if (!businessId) {
-        console.error('No business ID provided - user not logged in');
-        return;
-      }
-
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .get();
-
-      if (businessDoc.exists) {
-        setBusinessData(businessDoc.data());
-      }
-    } catch (error) {
-      console.error('Error fetching business data:', error);
     }
   };
 

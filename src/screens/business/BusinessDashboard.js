@@ -8,104 +8,130 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  RefreshControl,
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FontFamily, Color } from '../../styles/GlobalStyles';
 import BusinessSidebar from '../../components/BusinessSidebar';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 const BusinessDashboard = ({ navigation, route }) => {
   const [businessData, setBusinessData] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [showSidebar, setShowSidebar] = useState(false);
   const [pendingAppointments, setPendingAppointments] = useState([]);
+  const [futureAppointments, setFutureAppointments] = useState([]);
   const [canceledAppointments, setCanceledAppointments] = useState([]);
   const [completedAppointments, setCompletedAppointments] = useState([]);
   const [todayAppointments, setTodayAppointments] = useState([]);
-  const [futureAppointments, setFutureAppointments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [stats, setStats] = useState({
     totalAppointments: 0,
     totalRevenue: 0,
     averageRating: 0
   });
+  const [refreshing, setRefreshing] = useState(false);
+  const [isManualRefresh, setIsManualRefresh] = useState(true);
+  const [businessId, setBusinessId] = useState(null);
 
   useEffect(() => {
     const loadBusinessData = async () => {
-      setIsLoading(false);
       try {
-        const userId = auth().currentUser.uid;
-        console.log('Current user ID:', userId);
-        
-        // Subscribe to business data changes
-        const businessUnsubscribe = firestore()
-          .collection('businesses')
-          .doc(userId)
-          .onSnapshot((doc) => {
-            if (doc.exists) {
-              const data = doc.data();
-              console.log('Business data updated:', data);
+        const currentUser = FirebaseApi.getCurrentUser();
+        if (!currentUser) {
+          navigation.replace('BusinessLogin');
+          return;
+        }
+  
+        setBusinessId(currentUser.uid);
+  
+        // Subscribe to business data
+        const businessUnsubscribe = FirebaseApi.subscribeToBusinessData(
+          currentUser.uid,
+          (data) => {
+            console.log('Business data retrieved:', data);
+            if (data) {
               setBusinessData(data);
+              fetchAppointments(currentUser.uid, false);  // Auto-fetch on data load
             } else {
-              console.log('No business document found for user:', userId);
-              setBusinessData(null);
+              navigation.replace('BusinessLogin');
             }
-          }, (error) => {
-            console.error('Error in business listener:', error);
-          });
-
-        // Subscribe to appointments changes
-        const appointmentsUnsubscribe = firestore()
-          .collection('appointments')
-          .where('businessId', '==', userId)
-          .onSnapshot((snapshot) => {
-            console.log('Appointments updated');
-            if (!snapshot.empty) {
-              fetchAppointments(userId);
-            } else {
-              setPendingAppointments([]);
-              setCanceledAppointments([]);
-              setCompletedAppointments([]);
-              setTodayAppointments([]);
-              setFutureAppointments([]);
-            }
-          }, (error) => {
-            console.error('Error in appointments listener:', error);
-          });
-
-        // Cleanup function
+          },
+          (error) => {
+            console.error('Error in business data listener:', error);
+          }
+        );
+  
         return () => {
           businessUnsubscribe();
-          appointmentsUnsubscribe();
         };
       } catch (error) {
-        console.error('Error setting up listeners:', error);
-      }
-      finally {
-        setIsLoading(false);
+        console.error('Error in loadBusinessData:', error);
       }
     };
-
+  
     loadBusinessData();
-  }, []);  // Empty dependency array means this runs once on mount
+  }, [navigation]);
+  
 
-  const fetchAppointments = async (businessId) => {
+  useEffect(() => {
+    if (!businessId) return;
+  
+    const handleAppointmentUpdate = () => {
+      fetchAppointments(businessId, false); // Ensure real-time updates match manual refresh
+    };
+  
+    const pendingUnsubscribe = FirebaseApi.subscribeToPendingAppointments(
+      businessId, 
+      handleAppointmentUpdate, 
+      (error) => console.error('Error in pending appointments:', error)
+    );
+  
+    const approvedUnsubscribe = FirebaseApi.subscribeToApprovedAppointments(
+      businessId, 
+      handleAppointmentUpdate, 
+      (error) => console.error('Error in approved appointments:', error)
+    );
+  
+    const canceledUnsubscribe = FirebaseApi.subscribeToCanceledAppointments(
+      businessId, 
+      handleAppointmentUpdate, 
+      (error) => console.error('Error in canceled appointments:', error)
+    );
+  
+    const completedUnsubscribe = FirebaseApi.subscribeToCompletedAppointments(
+      businessId, 
+      handleAppointmentUpdate, 
+      (error) => console.error('Error in completed appointments:', error)
+    );
+  
+    return () => {
+      pendingUnsubscribe();
+      approvedUnsubscribe();
+      canceledUnsubscribe();
+      completedUnsubscribe();
+    };
+  }, [businessId]);
+  
+  const fetchAppointments = async (businessId, isManual = true) => {
     try {
       console.log('Fetching appointments for business:', businessId);
+      
+      // Only show loading if it's a manual refresh
+      if (isManual) {
+        setIsLoading(true);
+      }
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
       // Fetch appointments for this specific business
-      const appointmentsSnapshot = await firestore()
-        .collection('appointments')
-        .where('businessId', '==', businessId)
-        .get();
+      const appointments = await FirebaseApi.getBusinessAllAppointments(businessId);
 
-      console.log('Appointments found:', appointmentsSnapshot.size);
+      console.log('Appointments found:', appointments.length);
 
-      if (appointmentsSnapshot.empty) {
+      if (appointments.length === 0) {
         console.log('No appointments found for this business');
         setPendingAppointments([]);
         setCanceledAppointments([]);
@@ -116,162 +142,20 @@ const BusinessDashboard = ({ navigation, route }) => {
         return;
       }
 
-      // Collect all appointments and unique customer IDs
-      const appointments = [];
-      const customerIds = new Set();
-
-      appointmentsSnapshot.forEach(doc => {
-        const appointmentData = doc.data();
-        console.log('Raw appointment data:', appointmentData);
-        
-        appointments.push({
-          id: doc.id,
-          ...appointmentData
-        });
-        
-        if (appointmentData.customerId) {
-          customerIds.add(appointmentData.customerId);
-        }
-      });
-
-      console.log('Unique customer IDs:', Array.from(customerIds));
-
-      // Fetch all customers data in one batch
-      const customersData = {};
-      if (customerIds.size > 0) {
-        const customerSnapshots = await Promise.all(
-          Array.from(customerIds).map(customerId =>
-            firestore()
-              .collection('users')
-              .doc(customerId)
-              .get()
-          )
-        );
-
-        customerSnapshots.forEach(customerDoc => {
-          if (customerDoc.exists) {
-            console.log('Customer data found:', customerDoc.id, customerDoc.data());
-            customersData[customerDoc.id] = customerDoc.data();
-          }
-        });
-      }
-
-      // Process appointments and add customer data
-      const processedAppointments = await Promise.all(appointments.map(async appointment => {
-        console.log('------- Processing appointment -------');
-        console.log('Full appointment data:', {
-          id: appointment.id,
-          serviceId: appointment.serviceId,
-          businessId: appointment.businessId,
-          status: appointment.status
-        });
-        
-        // Format date and time from startTime
-        let formattedDate = 'תאריך לא זמין';
-        let formattedTime = 'שעה לא זמינה';
-        
-        try {
-          if (appointment.startTime) {
-            const date = new Date(appointment.startTime.seconds * 1000);
-            formattedDate = date.toLocaleDateString('he-IL');
-            formattedTime = date.toLocaleTimeString('he-IL', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            });
-          }
-        } catch (error) {
-          console.error('Error formatting date/time for appointment:', error);
-        }
-
-        // Get service details
-        let service = null;
-        if (appointment.serviceId && appointment.businessId) {
-          try {
-            // Get business data from Firestore
-            console.log(`Fetching business data for ID: ${appointment.businessId}`);
-            const businessDoc = await firestore()
-              .collection('businesses')
-              .doc(appointment.businessId)
-              .get();
-            
-            if (businessDoc.exists) {
-              const businessData = businessDoc.data();
-              console.log('Business data:', {
-                name: businessData.businessName,
-                hasServices: !!businessData.services,
-                serviceKeys: businessData.services ? Object.keys(businessData.services) : []
-              });
-              
-              const businessServices = businessData.services || {};
-              service = businessServices[appointment.serviceId];
-              
-              console.log('Service lookup:', {
-                lookingFor: appointment.serviceId,
-                found: !!service,
-                serviceDetails: service ? {
-                  name: service.name,
-                  duration: service.duration,
-                  price: service.price
-                } : null
-              });
-            } else {
-              console.log(`Business document not found for ID: ${appointment.businessId}`);
-            }
-          } catch (error) {
-            console.error('Error fetching service details:', error);
-            console.error('Error details:', {
-              message: error.message,
-              code: error.code
-            });
-          }
-        } else {
-          console.log('Missing required IDs:', { 
-            hasServiceId: !!appointment.serviceId, 
-            hasBusinessId: !!appointment.businessId 
-          });
-        }
-
-        // Get customer data
-        const customerData = customersData[appointment.customerId];
-        
-        const serviceDetails = service ? {
-          id: appointment.serviceId,
-          name: service.name || 'שם שירות לא זמין',
-          duration: parseInt(service.duration) || 0,
-          price: parseInt(service.price) || 0
-        } : {
-          name: 'שירות לא זמין',
-          duration: 0,
-          price: 0
-        };
-
-        console.log('Final processed appointment:', {
-          id: appointment.id,
-          status: appointment.status,
-          serviceDetails,
-          hasCustomerData: !!customerData
-        });
-        console.log('------- End processing appointment -------\n');
-        
+      // Process appointments
+      const processedAppointments = appointments.map(appointment => {
         return {
           ...appointment,
-          formattedDate,
-          time: formattedTime,
-          service: serviceDetails,
-          userData: customerData ? {
-            name: customerData.name || customerData.fullName || 'לקוח לא ידוע',
-            phone: customerData.phone || customerData.phoneNumber || 'מספר טלפון לא זמין',
-            email: customerData.email || 'אימייל לא זמין'
-          } : null
+          formattedDate: appointment.startTime ? new Date(appointment.startTime.seconds * 1000).toLocaleDateString('he-IL') : 'תאריך לא זמין',
+          time: appointment.startTime ? new Date(appointment.startTime.seconds * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : 'שעה לא זמינה'
         };
-      }));
+      });
 
       setStats({
         totalAppointments: processedAppointments.length,
         totalRevenue: processedAppointments
           .filter(app => app.status === 'completed')
-          .reduce((acc, app) => acc + (app.service?.price || 0), 0),
-        averageRating: calculateAverageRating(processedAppointments)
+          .reduce((acc, app) => acc + (app.service?.price || 0), 0)
       });
 
       // Filter appointments by status and date
@@ -358,60 +242,54 @@ const BusinessDashboard = ({ navigation, route }) => {
     }
   };
 
-  const calculateAverageRating = (appointments) => {
-    const completedWithRating = appointments.filter(app => app.status === 'completed' && app.rating);
-    if (completedWithRating.length === 0) return 0;
-    const totalRating = completedWithRating.reduce((sum, app) => sum + app.rating, 0);
-    return totalRating / completedWithRating.length;
-  };
-
   const handleUpdateAppointment = async (appointmentId, newStatus) => {
     try {
       setIsLoading(true);
-      console.log(`Updating appointment ${appointmentId} to status: ${newStatus}`);
 
-      const appointmentRef = firestore()
-        .collection('appointments')
-        .doc(appointmentId);
-
-      // עדכון הסטטוס והתאריך עדכון
-      await appointmentRef.update({
-        status: newStatus,
-        updatedAt: firestore.FieldValue.serverTimestamp()
-      });
-
-      // הודעה למשתמש
-      Alert.alert(
-        'עדכון סטטוס',
-        newStatus === 'approved' ? 'התור אושר בהצלחה!' : 'התור בוטל בהצלחה!',
-        [{ text: 'אישור', style: 'default' }]
+      await FirebaseApi.updateAppointmentStatus(appointmentId, newStatus);
+      
+      // Send notification to customer
+      await FirebaseApi.sendAppointmentStatusNotification(
+        appointmentId,
+        newStatus
       );
 
-      // רענון הנתונים
-      const userId = auth().currentUser.uid;
-      fetchAppointments(userId);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (currentUser) {
+        await fetchAppointments(currentUser.uid);
+      }
     } catch (error) {
       console.error('Error updating appointment:', error);
-      Alert.alert(
-        'שגיאה',
-        'אירעה שגיאה בעדכון התור. אנא נסה שוב.',
-        [{ text: 'אישור', style: 'default' }]
-      );
+      Alert.alert('שגיאה', 'אירעה שגיאה בעדכון התור');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // if (isLoading) {
-  //   return (
-  //     <SafeAreaView style={styles.container}>
-  //       <View style={styles.loadingContainer}>
-  //         <ActivityIndicator size="large" color={Color.primaryColorAmaranthPurple} />
-  //         <Text style={styles.loadingText}>טוען נתונים...</Text>
-  //       </View>
-  //     </SafeAreaView>
-  //   );
-  // }
+  const onRefresh = React.useCallback(() => {
+    setIsManualRefresh(true); // Mark as manual refresh
+    setRefreshing(true);
+    try {
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (currentUser) {
+        fetchAppointments(currentUser.uid);
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Add a check for complete data loading
+  if (isLoading || !businessData) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={Color.primary} />
+        <Text style={styles.loadingText}>טוען נתונים...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -436,8 +314,19 @@ const BusinessDashboard = ({ navigation, route }) => {
         businessData={businessData}
         currentScreen="BusinessDashboard"
       />
-
-      <ScrollView style={styles.mainContent}>
+      <ScrollView 
+        style={styles.mainContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#156779']}
+            tintColor="#156779"
+            title="מרענן..."
+            titleColor="#156779"
+          />
+        }
+      >
         <View style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>👋 ברוכים הבאים לדשבורד העסקי</Text>
           <Text style={styles.welcomeDescription}>
@@ -447,9 +336,14 @@ const BusinessDashboard = ({ navigation, route }) => {
         </View>
 
         <View style={styles.appointmentSection}>
-          <Text style={styles.sectionTitle}>⏳ תורים ממתינים לאישור</Text>
-          {isLoading ? (
-            <ActivityIndicator size="large" color="#0000ff" />
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>⏳ תורים ממתינים לאישור</Text>
+          </View>
+          {(isLoading && isManualRefresh) || isSubscriptionLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#156779" />
+              <Text style={styles.loadingText}>טוען תורים ממתינים...</Text>
+            </View>
           ) : pendingAppointments.length === 0 ? (
             <Text style={styles.emptyStateText}>אין תורים ממתינים</Text>
           ) : (
@@ -468,21 +362,13 @@ const BusinessDashboard = ({ navigation, route }) => {
                 <View style={styles.appointmentActions}>
                   <TouchableOpacity 
                     style={[styles.actionButton, styles.approveButton]}
-                    onPress={() => handleUpdateAppointment(appointment.id, 'approved')}
-                    disabled={isLoading}
-                  >
-                    <Text style={[styles.actionButtonText, { color: '#16a34a' }]}>
-                      {isLoading ? '...מעדכן' : '✓ אשר'}
-                    </Text>
+                    onPress={() => handleUpdateAppointment(appointment.id, 'approved')}>
+                    <Text style={styles.actionButtonText}>✓ אשר</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={[styles.actionButton, styles.cancelButton]}
-                    onPress={() => handleUpdateAppointment(appointment.id, 'canceled')}
-                    disabled={isLoading}
-                  >
-                    <Text style={[styles.actionButtonText, { color: '#dc2626' }]}>
-                      {isLoading ? '...מעדכן' : '✕ בטל'}
-                    </Text>
+                    onPress={() => handleUpdateAppointment(appointment.id, 'canceled')}>
+                    <Text style={styles.actionButtonText}>✕ בטל</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -491,8 +377,15 @@ const BusinessDashboard = ({ navigation, route }) => {
         </View>
 
         <View style={styles.appointmentSection}>
-          <Text style={styles.sectionTitle}>🕒 תורים עתידיים להיום</Text>
-          {futureAppointments.length === 0 ? (
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>🕒 תורים עתידיים להיום</Text>
+          </View>
+          {(isLoading && isManualRefresh) || isSubscriptionLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#156779" />
+              <Text style={styles.loadingText}>טוען תורים עתידיים...</Text>
+            </View>
+          ) : futureAppointments.length === 0 ? (
             <Text style={styles.emptyStateText}>אין תורים עתידיים להיום</Text>
           ) : (
             futureAppointments.map((appointment) => (
@@ -515,8 +408,15 @@ const BusinessDashboard = ({ navigation, route }) => {
         </View>
 
         <View style={styles.appointmentSection}>
-          <Text style={styles.sectionTitle}>🚫 תורים שבוטלו</Text>
-          {canceledAppointments.length === 0 ? (
+          <View style={styles.sectionTitleContainer}>
+            <Text style={styles.sectionTitle}>❌ תורים שבוטלו</Text>
+          </View>
+          {(isLoading && isManualRefresh) || isSubscriptionLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#156779" />
+              <Text style={styles.loadingText}>טוען תורים שבוטלו...</Text>
+            </View>
+          ) : canceledAppointments.length === 0 ? (
             <Text style={styles.emptyStateText}>אין תורים שבוטלו</Text>
           ) : (
             canceledAppointments.map((appointment) => (
@@ -537,16 +437,12 @@ const BusinessDashboard = ({ navigation, route }) => {
           )}
         </View>
 
-        
-
         <View style={styles.appointmentSection}>
           <Text style={styles.sectionTitle}>📊 סטטיסטיקות</Text>
           <Text style={styles.statsText}>
             מספר תורים: {stats.totalAppointments}
             {'\n'}
             הכנסות כוללות: {stats.totalRevenue}
-            {'\n'}
-            ממוצע דירוג: {stats.averageRating}
           </Text>
         </View>
       </ScrollView>
@@ -561,15 +457,19 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? 40 : 20,
   },
   loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    padding: 20,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    marginBottom: 16,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+    marginTop: 8,
+    fontSize: 14,
     fontFamily: FontFamily.assistantRegular,
-    color: Color.primaryColorAmaranthPurple,
+    color: '#156779',
+    textAlign: 'center',
   },
   emptyStateText: {
     textAlign: 'center',
@@ -606,7 +506,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontFamily: FontFamily.rubikMedium,
-    color: Color.primaryColorAmaranthPurple,
+    color: Color.primary,
     textAlign: 'center',
   },
   iconButton: {
@@ -633,7 +533,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.assistantBold,
     marginBottom: 10,
     textAlign: 'right',
-    color: Color.primaryColorAmaranthPurple,
+    color: Color.primary,
   },
   welcomeDescription: {
     fontSize: 14,
@@ -653,18 +553,27 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 18,
     fontFamily: FontFamily.assistantBold,
-    marginBottom: 16,
     textAlign: 'right',
-    color: Color.primaryColorAmaranthPurple,
+    color: Color.primary,
   },
   appointmentCard: {
-    backgroundColor: '#f8fafc',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 12,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },

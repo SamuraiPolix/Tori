@@ -18,10 +18,9 @@ import { Image as ExpoImage } from "expo-image";
 import { Color, FontFamily, Border } from "../../styles/GlobalStyles";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { storeUserData } from "../../utils/userStorage";
+import FirebaseApi from '../../utils/FirebaseApi';
 
 // Enable RTL
 I18nManager.allowRTL(true);
@@ -112,21 +111,8 @@ const Frame = ({ navigation }) => {
 
     setIsLoading(true);
     try {
-      const { user } = await auth().signInWithEmailAndPassword(loginEmail, loginPassword);
-      
-      // Get user data from Firestore
-      const userDoc = await firestore().collection('users').doc(user.uid).get();
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        // Store user data locally
-        await storeUserData(userData);
-      }
-
-      // Update last login
-      await firestore().collection('users').doc(user.uid).update({
-        lastLogin: firestore.Timestamp.now()
-      });
-
+      const { user, userData } = await FirebaseApi.signInWithEmail(loginEmail, loginPassword);
+      await storeUserData(userData);
       setIsLoading(false);
       navigation.navigate('Home');
     } catch (error) {
@@ -157,54 +143,8 @@ const Frame = ({ navigation }) => {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
-      
-      // Make sure Google Play Services are available
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      
-      // Sign in with Google
-      const userInfo = await GoogleSignin.signIn();
-      console.log('Google Sign-In Success:', userInfo);
-
-      if (!userInfo?.data?.idToken) {
-        throw new Error('Failed to get ID token from Google Sign-In');
-      }
-
-      // Create a Google credential with the token
-      const googleCredential = auth.GoogleAuthProvider.credential(userInfo.data.idToken);
-      
-      // Sign in to Firebase with the Google credential
-      const userCredential = await auth().signInWithCredential(googleCredential);
-      const user = userCredential.user;
-      console.log('Firebase Auth Success:', user.uid);
-
-      // Get user document from Firestore
-      const userDocRef = firestore().collection('users').doc(user.uid);
-      const userDoc = await userDocRef.get();
-
-      // Prepare user data
-      const userData = {
-        uid: user.uid,
-        email: user.email,
-        name: user.displayName || userInfo.data.user.name || '',
-        phoneNumber: user.phoneNumber || null,
-        updatedAt: firestore.Timestamp.now(),
-        lastLogin: firestore.Timestamp.now(),
-        photoURL: user.photoURL || userInfo.data.user.photo || null,
-      };
-
-      if (!userDoc.exists) {
-        // Create new user document if it doesn't exist
-        userData.createdAt = firestore.Timestamp.now();
-        await userDocRef.set(userData);
-      } else {
-        // Update existing user document
-        await userDocRef.update(userData);
-      }
-
-      // Store user data locally
+      const { user, userData } = await FirebaseApi.signInWithGoogle();
       await storeUserData(userData);
-
-      // Navigate to Home screen
       navigation.navigate('Home');
     } catch (error) {
       console.error('Google Sign-In Error:', error);
@@ -236,11 +176,7 @@ const Frame = ({ navigation }) => {
 
     setIsLoading(true);
     try {
-      const formattedPhoneNumber = phone.startsWith('0') 
-        ? `+972${phone.substring(1)}` 
-        : phone;
-      
-      const confirmationResult = await auth().signInWithPhoneNumber(formattedPhoneNumber);
+      const confirmationResult = await FirebaseApi.signInWithPhone(phone);
       setConfirmation(confirmationResult);
       Alert.alert('קוד אימות נשלח', 'אנא הזן את הקוד שקיבלת ב-SMS');
     } catch (error) {
@@ -254,7 +190,7 @@ const Frame = ({ navigation }) => {
   const confirmCode = async () => {
     try {
       setIsLoading(true);
-      const credential = await confirmation.confirm(code);
+      const credential = await FirebaseApi.confirmPhoneCode(confirmation, code);
       
       // Check if this is the first sign in
       if (credential.additionalUserInfo?.isNewUser) {
@@ -276,41 +212,27 @@ const Frame = ({ navigation }) => {
   
     try {
       setIsLoading(true);
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (currentUser) {
-        // Update Firebase Auth profile
-        await currentUser.updateProfile({
+        await FirebaseApi.updateUserProfile(currentUser.uid, {
           displayName: userName.trim()
         });
-  
-        // Prepare user data
+
         const userData = {
           uid: currentUser.uid,
           name: userName.trim(),
           email: currentUser.email || null,
-          phoneNumber: currentUser.phoneNumber || null,
-          createdAt: firestore.Timestamp.now(),
-          updatedAt: firestore.Timestamp.now(),
-          lastLogin: firestore.Timestamp.now()
+          phoneNumber: currentUser.phoneNumber || null
         };
-  
-        // Save user data to Firestore
-        const userDocRef = firestore().collection('users').doc(currentUser.uid);
-        await userDocRef.set(userData);
-  
-        // Save to local storage
-        await storeUserData({
-          ...userData,
-          displayName: userName.trim(), // Include displayName for consistency
-          lastSynced: new Date().toISOString()
-        });
-  
+
+        await FirebaseApi.createNewUser(userData);
+        await storeUserData(userData);
         setShowNamePrompt(false);
-        navigation.replace('Home');
+        navigation.navigate('Home');
       }
     } catch (error) {
-      console.error('Update Profile Error:', error);
-      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת השם');
+      console.error('Error saving user data:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת הנתונים');
     } finally {
       setIsLoading(false);
     }

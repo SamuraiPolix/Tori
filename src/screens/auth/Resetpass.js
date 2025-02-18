@@ -8,10 +8,12 @@ import {
   TextInput,
   Dimensions,
   I18nManager,
-  Alert 
+  Alert,
+  ActivityIndicator 
 } from "react-native";
 import { Image } from "expo-image";
 import { Color, FontFamily, Border } from "../../styles/GlobalStyles";
+import FirebaseApi from '../../utils/FirebaseApi';
 
 // Enable RTL
 I18nManager.allowRTL(true);
@@ -19,11 +21,12 @@ I18nManager.forceRTL(true);
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const ForgotPasswordScreen = ({ navigation }) => {
+const ForgotPasswordScreen = ({ navigation, route }) => {
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
 
   const validatePasswords = () => {
     if (password.length < 6) {
@@ -37,11 +40,39 @@ const ForgotPasswordScreen = ({ navigation }) => {
     return true;
   };
 
-  const handleSubmit = () => {
-    if (validatePasswords()) {
-      // Add password reset logic here
-      console.log('Resetting password:', password);
-      navigation.navigate('Login'); // או כל מסך אחר שתרצה
+  const handleSubmit = async () => {
+    if (!validatePasswords()) return;
+
+    try {
+      setIsLoading(true);
+      await FirebaseApi.updatePassword(password);
+      Alert.alert(
+        'הצלחה',
+        'הסיסמה עודכנה בהצלחה',
+        [
+          {
+            text: 'אישור',
+            onPress: () => navigation.navigate('Login')
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Password Reset Error:', error);
+      let errorMessage = 'אירעה שגיאה בעדכון הסיסמה';
+      
+      switch (error.code) {
+        case 'auth/weak-password':
+          errorMessage = 'הסיסמה חלשה מדי';
+          break;
+        case 'auth/requires-recent-login':
+          errorMessage = 'יש להתחבר מחדש לפני שינוי הסיסמה';
+          navigation.navigate('Login');
+          break;
+      }
+      
+      Alert.alert('שגיאה', errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -119,7 +150,11 @@ const ForgotPasswordScreen = ({ navigation }) => {
           style={styles.submitButton}
           onPress={handleSubmit}
         >
-          <Text style={styles.submitButtonText}>שמור</Text>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={Color.grayscaleColorWhite} />
+          ) : (
+            <Text style={styles.submitButtonText}>שמור</Text>
+          )}
         </TouchableOpacity>
 
         {/* Password Requirements */}

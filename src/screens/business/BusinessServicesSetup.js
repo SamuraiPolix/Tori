@@ -11,8 +11,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { FontFamily } from '../../styles/GlobalStyles';
-import firestore from '@react-native-firebase/firestore';
-import auth from '@react-native-firebase/auth';
+import FirebaseApi from '../../utils/FirebaseApi';
 
 export default function BusinessServicesSetup({ navigation, route }) {
   const { businessData } = route.params;
@@ -31,16 +30,15 @@ export default function BusinessServicesSetup({ navigation, route }) {
   useEffect(() => {
     const loadServices = async () => {
       try {
-        const businessDoc = await firestore()
-          .collection('businesses')
-          .doc(auth().currentUser.uid)
-          .get();
+        const currentUser = FirebaseApi.getCurrentUser();
+        if (!currentUser) {
+          Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+          return;
+        }
 
-        if (businessDoc.exists) {
-          const data = businessDoc.data();
-          if (data.services && Array.isArray(data.services)) {
-            setServices(data.services);
-          }
+        const businessData = await FirebaseApi.getBusinessData(currentUser.uid);
+        if (businessData && businessData.services && Array.isArray(businessData.services)) {
+          setServices(businessData.services);
         }
       } catch (error) {
         console.error('Error loading services:', error);
@@ -57,17 +55,17 @@ export default function BusinessServicesSetup({ navigation, route }) {
   const saveServices = async () => {
     setSaving(true);
     try {
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          services: services,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
+      await FirebaseApi.updateBusinessServices(currentUser.uid, services);
 
       Alert.alert('הצלחה', 'השירותים נשמרו בהצלחה');
       navigation.navigate('BusinessScheduleSetup', { 
-        businessId: auth().currentUser.uid,
+        businessId: currentUser.uid,
         businessData: { ...businessData, services }
       });
     } catch (error) {
@@ -95,14 +93,14 @@ export default function BusinessServicesSetup({ navigation, route }) {
     
     try {
       setSaving(true);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
       // Save to Firestore immediately
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          services: updatedServices,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      await FirebaseApi.updateBusinessServices(currentUser.uid, updatedServices);
       
       setServices(updatedServices);
       setNewService({ name: '', price: '', duration: '30' });
@@ -123,16 +121,16 @@ export default function BusinessServicesSetup({ navigation, route }) {
   const confirmDelete = async () => {
     try {
       setSaving(true);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
       const updatedServices = services.filter(s => s.id !== serviceToDelete.id);
       
       // Save to Firestore immediately
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          services: updatedServices,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      await FirebaseApi.updateBusinessServices(currentUser.uid, updatedServices);
 
       setServices(updatedServices);
       setShowDeleteModal(false);
@@ -154,6 +152,12 @@ export default function BusinessServicesSetup({ navigation, route }) {
   const confirmEdit = async () => {
     try {
       setSaving(true);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        Alert.alert('שגיאה', 'לא נמצא משתמש מחובר');
+        return;
+      }
+
       const updatedServices = services.map(s => 
         s.id === editingService.id ? {
           ...editingService,
@@ -163,13 +167,7 @@ export default function BusinessServicesSetup({ navigation, route }) {
       );
 
       // Save to Firestore immediately
-      await firestore()
-        .collection('businesses')
-        .doc(auth().currentUser.uid)
-        .update({
-          services: updatedServices,
-          updatedAt: firestore.FieldValue.serverTimestamp()
-        });
+      await FirebaseApi.updateBusinessServices(currentUser.uid, updatedServices);
 
       setServices(updatedServices);
       setShowEditModal(false);

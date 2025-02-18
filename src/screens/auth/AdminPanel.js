@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { FontFamily } from '../../styles/GlobalStyles';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
@@ -7,6 +7,8 @@ import auth from '@react-native-firebase/auth';
 const AdminPanel = ({ navigation }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState(0);
 
   const createAppointmentsForBusiness = async (business, startDate, db) => {
     const businessData = business.data();
@@ -171,47 +173,195 @@ const AdminPanel = ({ navigation }) => {
     }
   };
 
+  const migrateAppointments = async () => {
+    try {
+      // Confirm with user before starting
+      Alert.alert(
+        'Start Migration',
+        'This will update all appointments to include customer and service data. Continue?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: async () => {
+              try {
+                setIsMigrating(true);
+                setMigrationProgress(0);
+                
+                const db = firestore();
+                
+                // Get all non-available appointments
+                const appointmentsSnapshot = await db
+                  .collection('appointments')
+                  .where('status', '!=', 'available')
+                  .get();
+                
+                const totalAppointments = appointmentsSnapshot.docs.length;
+                
+                if (totalAppointments === 0) {
+                  Alert.alert('Info', 'No appointments found to migrate');
+                  return;
+                }
+
+                console.log(`Starting migration of ${totalAppointments} appointments...`);
+                let successCount = 0;
+                let errorCount = 0;
+                let skippedCount = 0;
+                let batch = db.batch();
+                let batchCount = 0;
+
+                for (const doc of appointmentsSnapshot.docs) {
+                  try {
+                    const appointment = doc.data();
+                    
+                    // Skip if already migrated
+                    if (appointment.customerName && appointment.serviceName) {
+                      skippedCount++;
+                      continue;
+                    }
+
+                    // Skip if no customer ID or service ID
+                    if (!appointment.customerId || !appointment.serviceId) {
+                      console.warn(`Skipping appointment ${doc.id} - missing customer or service ID`);
+                      skippedCount++;
+                      continue;
+                    }
+
+                    // Get customer data
+                    const customerDoc = await db.collection('users').doc(appointment.customerId).get();
+                    const customerData = customerDoc.data();
+
+                    if (!customerDoc.exists) {
+                      console.warn(`Customer ${appointment.customerId} not found for appointment ${doc.id}`);
+                      errorCount++;
+                      continue;
+                    }
+
+                    // Get business and service data
+                    const businessDoc = await db.collection('businesses').doc(appointment.businessId).get();
+                    const businessData = businessDoc.data();
+                    
+                    if (!businessDoc.exists) {
+                      console.warn(`Business ${appointment.businessId} not found for appointment ${doc.id}`);
+                      errorCount++;
+                      continue;
+                    }
+
+                    const serviceData = businessData?.services?.[appointment.serviceId];
+                    
+                    if (!serviceData) {
+                      console.warn(`Service ${appointment.serviceId} not found in business ${appointment.businessId}`);
+                      errorCount++;
+                      continue;
+                    }
+
+                    // Update appointment with denormalized data
+                    batch.update(doc.ref, {
+                      customerName: customerData.name || 'לקוח לא זמין',
+                      customerPhone: customerData.phone || customerData.phoneNumber || 'לא זמין',
+                      serviceName: serviceData.name || 'שירות לא זמין',
+                      servicePrice: parseInt(serviceData.price) || 0,
+                      serviceDuration: parseInt(serviceData.duration) || 0,
+                      updatedAt: firestore.FieldValue.serverTimestamp()
+                    });
+
+                    batchCount++;
+                    successCount++;
+
+                    // Commit every 500 updates
+                    if (batchCount === 500) {
+                      await batch.commit();
+                      console.log(`Migrated ${successCount} appointments`);
+                      batch = db.batch();
+                      batchCount = 0;
+                    }
+
+                    // Update progress
+                    const progress = Math.round((successCount / totalAppointments) * 100);
+                    setMigrationProgress(progress);
+
+                  } catch (error) {
+                    console.error(`Error migrating appointment ${doc.id}:`, error);
+                    errorCount++;
+                  }
+                }
+
+                // Commit any remaining updates
+                if (batchCount > 0) {
+                  await batch.commit();
+                }
+
+                const message = [
+                  `Successfully migrated: ${successCount} appointments`,
+                  `Skipped (already migrated): ${skippedCount} appointments`,
+                  `Failed: ${errorCount} appointments`
+                ].join('\n');
+
+                Alert.alert('Migration Complete', message);
+                console.log(`Migration complete.\n${message}`);
+
+              } catch (error) {
+                console.error('Error in migration:', error);
+                Alert.alert('Error', 'Failed to migrate appointments: ' + error.message);
+              } finally {
+                setIsMigrating(false);
+                setMigrationProgress(0);
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error showing migration alert:', error);
+      Alert.alert('Error', 'Failed to start migration');
+    }
+  };
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.title}>Admin Panel</Text>
-      
-      <TouchableOpacity
-        style={[styles.button, isGenerating && styles.disabledButton]}
-        onPress={generateAppointments}
-        disabled={isGenerating}
-      >
-        {isGenerating ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color="#FFFFFF" />
-            <Text style={styles.buttonText}>יוצר תורים...</Text>
-          </View>
-        ) : (
-          <Text style={styles.buttonText}>צור תורים לכל העסקים</Text>
-        )}
-      </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.deleteButton, isDeleting && styles.disabledButton]}
-        onPress={deleteAvailableAppointments}
-        disabled={isDeleting}
-      >
-        {isDeleting ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color="#FFFFFF" />
-            <Text style={styles.buttonText}>מוחק תורים...</Text>
-          </View>
-        ) : (
-          <Text style={styles.buttonText}>מחק את כל התורים הפנויים</Text>
-        )}
-      </TouchableOpacity>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Appointment Management</Text>
+        
+        <TouchableOpacity
+          style={[styles.button, isGenerating && styles.buttonDisabled]}
+          onPress={generateAppointments}
+          disabled={isGenerating}>
+          <Text style={styles.buttonText}>
+            {isGenerating ? 'Generating...' : 'Generate Available Appointments'}
+          </Text>
+          {isGenerating && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.closeButton}
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.closeButtonText}>סגור</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          style={[styles.button, isDeleting && styles.buttonDisabled]}
+          onPress={deleteAvailableAppointments}
+          disabled={isDeleting}>
+          <Text style={styles.buttonText}>
+            {isDeleting ? 'Deleting...' : 'Delete Available Appointments'}
+          </Text>
+          {isDeleting && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, isMigrating && styles.buttonDisabled]}
+          onPress={migrateAppointments}
+          disabled={isMigrating}>
+          <Text style={styles.buttonText}>
+            {isMigrating ? `Migrating (${migrationProgress}%)` : 'Migrate Appointment Data'}
+          </Text>
+          {isMigrating && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
+        </TouchableOpacity>
+      </View>
+
+      {isMigrating && (
+        <View style={styles.progressContainer}>
+          <View style={[styles.progressBar, { width: `${migrationProgress}%` }]} />
+          <Text style={styles.progressText}>{migrationProgress}% Complete</Text>
+        </View>
+      )}
+    </ScrollView>
   );
 };
 
@@ -220,55 +370,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   title: {
     fontSize: 24,
-    fontFamily: FontFamily["Assistant-Bold"],
+    fontFamily: FontFamily.bold,
+    marginBottom: 20,
+    color: '#333333',
+  },
+  section: {
     marginBottom: 30,
-    textAlign: 'center',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.semiBold,
+    marginBottom: 15,
+    color: '#444444',
   },
   button: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#156779',
     padding: 15,
     borderRadius: 8,
-    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
   },
-  deleteButton: {
-    backgroundColor: '#f44336',
-    padding: 15,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  disabledButton: {
-    backgroundColor: '#cccccc',
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontFamily: FontFamily["Assistant-SemiBold"],
+    fontSize: 16,
+    fontFamily: FontFamily.medium,
+    marginRight: 10,
   },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  spinner: {
+    marginLeft: 10,
   },
-  closeButton: {
-    backgroundColor: '#757575',
-    padding: 15,
-    borderRadius: 8,
+  progressContainer: {
+    marginTop: 20,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: 20,
+    backgroundColor: '#156779',
+  },
+  progressText: {
+    position: 'absolute',
     width: '100%',
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontFamily: FontFamily["Assistant-SemiBold"],
+    textAlign: 'center',
+    lineHeight: 20,
+    color: '#000000',
+    fontFamily: FontFamily.medium,
   },
 });
 

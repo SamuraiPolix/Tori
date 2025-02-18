@@ -12,8 +12,7 @@ import {
 import { FontFamily } from '../../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import FirebaseApi from '../../utils/FirebaseApi';
 import { Color } from '../../styles/GlobalStyles';
 import BusinessSidebar from '../../components/BusinessSidebar';
 
@@ -85,118 +84,69 @@ const BusinessStats = ({ navigation }) => {
     }
   };
 
+  const fetchBusinessData = async () => {
+    try {
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        console.error('No user logged in');
+        return;
+      }
+
+      const data = await FirebaseApi.getBusinessData(currentUser.uid);
+      if (data) {
+        setBusinessData(data);
+      }
+    } catch (error) {
+      console.error('Error fetching business data:', error);
+    }
+  };
+
   const fetchStats = async () => {
     try {
       setIsLoading(true);
-      const businessId = auth().currentUser.uid;
-      const { start, end } = getDateRange(activeTab);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) {
+        console.error('No user logged in');
+        return;
+      }
 
-      console.log('Fetching stats for business:', businessId);
+      const { start, end } = getDateRange(activeTab);
+      console.log('Fetching stats for business:', currentUser.uid);
       console.log('Date range:', {
         start: start.toISOString(),
         end: end.toISOString()
       });
 
-      if (!businessId) {
-        console.error('No businessId provided');
+      const statsData = await FirebaseApi.getBusinessStats(currentUser.uid, start, end);
+      if (!statsData) {
+        console.error('No stats data returned');
         return;
       }
 
-      // Fetch appointments first
-      const appointmentsRef = firestore().collection('appointments');
-      const appointmentsSnap = await appointmentsRef.get();
-      const appointments = [];
-
-      // Filter appointments by businessId and date range in memory
-      for (const doc of appointmentsSnap.docs) {
-        const appointmentData = doc.data();
-        
-        // Skip if not for this business
-        if (appointmentData.businessId !== businessId) {
-          continue;
-        }
-
-        // Convert Firestore timestamp to Date
-        const appointmentDate = appointmentData.startTime ? 
-          new Date(appointmentData.startTime.seconds * 1000) : null;
-
-        // Skip if date is not in range
-        if (!appointmentDate || appointmentDate < start || appointmentDate > end) {
-          continue;
-        }
-
-        appointments.push({
-          id: doc.id,
-          ...appointmentData,
-          date: appointmentDate
-        });
-      }
-
-      // Now fetch the business data to get service prices
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .get();
-
-      if (!businessDoc.exists) {
-        console.error('Business document not found');
-        return;
-      }
-
-      const businessData = businessDoc.data();
-      const services = businessData.services || [];
-
-      console.log('Services:', services);
-
-      // Update appointments with service prices
-      appointments.forEach(appointment => {
-        const service = services.find(s => s.id === appointment.serviceId);
-        if (service) {
-          appointment.servicePrice = service.price;
-          appointment.serviceName = service.name;
-        }
-      });
-
-      console.log('Appointments with prices:', appointments.map(app => ({
-        id: app.id,
-        serviceId: app.serviceId,
-        servicePrice: app.servicePrice,
-        serviceName: app.serviceName,
-        status: app.status,
-        date: app.date?.toLocaleString()
-      })));
-
-      // Calculate statistics
-      const revenue = appointments
-        .filter(app => app.status === 'completed')
-        .reduce((sum, app) => sum + (app.servicePrice || 0), 0);
-
-      const uniqueCustomers = new Set(appointments.map(app => app.customerId)).size;
-      const totalAppointments = appointments.length;
-      const canceledAppointments = appointments.filter(app => app.status === 'canceled').length;
-
-      // Generate chart data
+      // Process appointments data for charts
+      const appointments = statsData.appointments;
       const chartLabels = [];
       const appointmentsData = [];
 
       if (activeTab === 'day') {
-        // יצירת מערך של 24 שעות עם ערך התחלתי 0
+        // Create 24-hour array with initial value 0
         const hourlyData = new Array(24).fill(0);
         
-        // מיון התורים לפי שעות
+        // Sort appointments by hours
         appointments.forEach(app => {
-          if (app.date) {
-            const hour = app.date.getHours();
+          if (app.startTime) {
+            const date = app.startTime.toDate();
+            const hour = date.getHours();
             hourlyData[hour]++;
           }
         });
 
-        // הוספת רק שעות שיש בהן פעילות או שעות קרובות
+        // Add only hours with activity or nearby hours
         let hasActivity = false;
         let firstActivityHour = 23;
         let lastActivityHour = 0;
 
-        // מציאת טווח השעות עם פעילות
+        // Find hours range with activity
         hourlyData.forEach((value, hour) => {
           if (value > 0) {
             hasActivity = true;
@@ -205,77 +155,65 @@ const BusinessStats = ({ navigation }) => {
           }
         });
 
-        // אם אין פעילות, נציג את השעות הנוכחיות
         if (!hasActivity) {
-          const currentHour = new Date().getHours();
-          firstActivityHour = Math.max(0, currentHour - 2);
-          lastActivityHour = Math.min(23, currentHour + 2);
+          // If no activity, show business hours
+          firstActivityHour = 9;  // Default business start hour
+          lastActivityHour = 17;  // Default business end hour
+        } else {
+          // Add padding hours
+          firstActivityHour = Math.max(0, firstActivityHour - 2);
+          lastActivityHour = Math.min(23, lastActivityHour + 2);
         }
 
-        // הוספת שעה לפני ואחרי טווח הפעילות
-        firstActivityHour = Math.max(0, firstActivityHour - 1);
-        lastActivityHour = Math.min(23, lastActivityHour + 1);
-
-        // יצירת התוויות והנתונים לגרף
+        // Create final data arrays
         for (let hour = firstActivityHour; hour <= lastActivityHour; hour++) {
-          const formattedHour = hour.toString().padStart(2, '0');
-          chartLabels.push(`${formattedHour}:00`);
+          chartLabels.push(`${hour}:00`);
           appointmentsData.push(hourlyData[hour]);
         }
       } else if (activeTab === 'week') {
-        const days = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+        const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
         const dailyData = new Array(7).fill(0);
 
-        // מיון התורים לפי ימים
         appointments.forEach(app => {
-          if (app.date) {
-            const dayIndex = app.date.getDay();
-            dailyData[dayIndex]++;
+          if (app.startTime) {
+            const date = app.startTime.toDate();
+            const day = date.getDay();
+            dailyData[day]++;
           }
         });
 
-        // הוספת כל הימים לגרף
-        for (let i = 0; i < 7; i++) {
-          chartLabels.push(days[i]);
-          appointmentsData.push(dailyData[i]);
-        }
-      } else {
-        // Month view
-        const daysInMonth = 31;
-        const dailyData = new Array(daysInMonth).fill(0);
-
-        // מיון התורים לפי ימים בחודש
+        days.forEach((day, index) => {
+          chartLabels.push(day);
+          appointmentsData.push(dailyData[index]);
+        });
+      } else if (activeTab === 'month') {
+        const monthlyData = {};
+        
         appointments.forEach(app => {
-          if (app.date) {
-            const dayOfMonth = app.date.getDate() - 1; // 0-based index
-            if (dayOfMonth < daysInMonth) {
-              dailyData[dayOfMonth]++;
-            }
+          if (app.startTime) {
+            const date = app.startTime.toDate();
+            const day = date.getDate();
+            monthlyData[day] = (monthlyData[day] || 0) + 1;
           }
         });
 
-        // הוספת כל הימים לגרף
-        for (let i = 0; i < daysInMonth; i++) {
-          chartLabels.push((i + 1).toString());
-          appointmentsData.push(dailyData[i]);
-        }
+        Object.keys(monthlyData)
+          .sort((a, b) => Number(a) - Number(b))
+          .forEach(day => {
+            chartLabels.push(day.toString());
+            appointmentsData.push(monthlyData[day]);
+          });
       }
 
-      console.log(`Stats for ${activeTab}:`, {
-        totalAppointments,
-        completedAppointments: appointments.filter(app => app.status === 'completed').length,
-        canceledAppointments,
-        uniqueCustomers
-      });
-
+      // Update state with new data
       setStats(prev => ({
         ...prev,
         [activeTab]: {
-          revenue: revenue,
-          newCustomers: uniqueCustomers,
-          appointments: totalAppointments,
-          canceledAppointments,
-          completedAppointments: appointments.filter(app => app.status === 'completed').length
+          revenue: statsData.totalRevenue,
+          appointments: statsData.totalAppointments,
+          completedAppointments: statsData.completedAppointments,
+          canceledAppointments: statsData.canceledAppointments,
+          newCustomers: appointments.length > 0 ? new Set(appointments.map(app => app.customerId)).size : 0
         }
       }));
 
@@ -283,10 +221,7 @@ const BusinessStats = ({ navigation }) => {
         ...prev,
         [activeTab]: {
           labels: chartLabels,
-          datasets: [{ 
-            data: appointmentsData,
-            color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-          }]
+          datasets: [{ data: appointmentsData }]
         }
       }));
 
@@ -294,22 +229,6 @@ const BusinessStats = ({ navigation }) => {
       console.error('Error fetching stats:', error);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchBusinessData = async () => {
-    try {
-      const businessId = auth().currentUser.uid;
-      const businessDoc = await firestore()
-        .collection('businesses')
-        .doc(businessId)
-        .get();
-
-      if (businessDoc.exists) {
-        setBusinessData(businessDoc.data());
-      }
-    } catch (error) {
-      console.error('Error fetching business data:', error);
     }
   };
 

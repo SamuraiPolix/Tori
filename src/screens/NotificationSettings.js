@@ -13,9 +13,7 @@ import {
 } from 'react-native';
 import { Color, FontFamily } from '../styles/GlobalStyles';
 import { Ionicons } from '@expo/vector-icons';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
-import messaging from '@react-native-firebase/messaging';
+import FirebaseApi from '../utils/FirebaseApi';
 
 // Force RTL
 I18nManager.allowRTL(true);
@@ -38,25 +36,18 @@ const NotificationSettings = ({ navigation }) => {
 
   const fetchNotificationSettings = async () => {
     try {
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) {
         navigation.navigate('Login');
         return;
       }
 
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .get();
-
-      if (userDoc.exists) {
-        const data = userDoc.data();
-        if (data.notificationSettings) {
-          setSettings(prevSettings => ({
-            ...prevSettings,
-            ...data.notificationSettings
-          }));
-        }
+      const userData = await FirebaseApi.getUserData(currentUser.uid);
+      if (userData?.notificationSettings) {
+        setSettings(prevSettings => ({
+          ...prevSettings,
+          ...userData.notificationSettings
+        }));
       }
     } catch (error) {
       console.error('Error fetching notification settings:', error);
@@ -68,11 +59,7 @@ const NotificationSettings = ({ navigation }) => {
 
   const checkPushPermission = async () => {
     try {
-      const authStatus = await messaging().hasPermission();
-      const enabled = 
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      
+      const enabled = await FirebaseApi.checkPushNotificationPermission();
       setSettings(prev => ({ ...prev, pushEnabled: enabled }));
     } catch (error) {
       console.error('Error checking push permission:', error);
@@ -81,11 +68,7 @@ const NotificationSettings = ({ navigation }) => {
 
   const requestPushPermission = async () => {
     try {
-      const authStatus = await messaging().requestPermission();
-      const enabled = 
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-
+      const enabled = await FirebaseApi.requestPushNotificationPermission();
       setSettings(prev => ({ ...prev, pushEnabled: enabled }));
 
       if (!enabled) {
@@ -113,24 +96,37 @@ const NotificationSettings = ({ navigation }) => {
       return;
     }
 
-    setSettings(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+    handleSettingChange(key, !settings[key]);
+  };
+
+  const handleSettingChange = async (setting, value) => {
+    try {
+      setSaving(true);
+      const currentUser = FirebaseApi.getCurrentUser();
+      if (!currentUser) return;
+
+      const updatedSettings = {
+        ...settings,
+        [setting]: value
+      };
+
+      await FirebaseApi.updateNotificationSettings(currentUser.uid, updatedSettings);
+      setSettings(updatedSettings);
+    } catch (error) {
+      console.error('Error updating notification settings:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת ההגדרות');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveSettings = async () => {
     try {
       setSaving(true);
-      const currentUser = auth().currentUser;
+      const currentUser = FirebaseApi.getCurrentUser();
       if (!currentUser) return;
 
-      await firestore()
-        .collection('users')
-        .doc(currentUser.uid)
-        .update({
-          notificationSettings: settings
-        });
+      await FirebaseApi.updateNotificationSettings(currentUser.uid, settings);
 
       Alert.alert('הצלחה', 'הגדרות ההתראות נשמרו בהצלחה');
       navigation.goBack();
