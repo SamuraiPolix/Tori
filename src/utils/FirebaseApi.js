@@ -1081,8 +1081,17 @@ class FirebaseApi {
       .collection('businesses')
       .doc(businessId)
       .update({
-        schedule: scheduleData,
+        scheduleSettings: scheduleData,
         updatedAt: this.getServerTimestamp(),
+      });
+  }
+
+  static async updateBusinessWorkingHours(businessId, workingHours) {
+    await firestore()
+      .collection('businesses')
+      .doc(businessId)
+      .update({
+        workingHours: workingHours,
       });
   }
 
