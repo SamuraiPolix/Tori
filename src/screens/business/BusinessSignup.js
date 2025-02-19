@@ -208,15 +208,15 @@ const BusinessSignupScreen = ({ navigation, route }) => {
         images: [],
         rating: 0,
         reviewsCount: 0,
-        workingHours: {
-          sunday: { open: '09:00', close: '17:00', isOpen: true },
-          monday: { open: '09:00', close: '17:00', isOpen: true },
-          tuesday: { open: '09:00', close: '17:00', isOpen: true },
-          wednesday: { open: '09:00', close: '17:00', isOpen: true },
-          thursday: { open: '09:00', close: '17:00', isOpen: true },
-          friday: { open: '09:00', close: '14:00', isOpen: true },
-          saturday: { isOpen: false, open: '00:00', close: '00:00' }
-        },
+        // workingHours: {
+        //   sunday: { open: '09:00', close: '17:00', isOpen: true },
+        //   monday: { open: '09:00', close: '17:00', isOpen: true },
+        //   tuesday: { open: '09:00', close: '17:00', isOpen: true },
+        //   wednesday: { open: '09:00', close: '17:00', isOpen: true },
+        //   thursday: { open: '09:00', close: '17:00', isOpen: true },
+        //   friday: { open: '09:00', close: '14:00', isOpen: true },
+        //   saturday: { isOpen: false, open: '00:00', close: '00:00' }
+        // },
         createdAt: FirebaseApi.getServerTimestamp(),
         updatedAt: FirebaseApi.getServerTimestamp(),
         status: 'active'

@@ -100,11 +100,11 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
         minTimeBeforeBooking: parseInt(minTimeBeforeBooking),
         allowCancellation,
         cancellationTimeLimit: parseInt(cancellationTimeLimit),
-        workingHours,
         updatedAt: FirebaseApi.getServerTimestamp()
       };
 
       await FirebaseApi.updateBusinessSchedule(currentUser.uid, scheduleSettings);
+      await FirebaseApi.updateBusinessWorkingHours(currentUser.uid, workingHours);
 
       navigation.reset({
         index: 0,
@@ -114,7 +114,8 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
             businessId: currentUser.uid,
             businessData: {
               ...businessData,
-              schedule: scheduleSettings
+              scheduleSettings: scheduleSettings,
+              workingHours: workingHours
             }
           }
         }],

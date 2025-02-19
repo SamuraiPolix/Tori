@@ -13,7 +13,8 @@ import {
   Linking,
   Platform,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  RefreshControl
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontFamily, Color, FontSize, Border, Padding } from "../../styles/GlobalStyles";
@@ -43,6 +44,32 @@ const SalonDetails = ({ route }) => {
   const [selectedService, setSelectedService] = React.useState(null);
   const [showConfirmModal, setShowConfirmModal] = React.useState(false);
   const [notes, setNotes] = React.useState(null);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [businessData, setBusinessData] = React.useState(route.params.business);
+
+  // Function to refresh business data
+  const onRefresh = React.useCallback(async () => {
+    try {
+      setRefreshing(true);
+      // Fetch updated business data
+      const updatedBusiness = await FirebaseApi.getBusinessData(businessData.id);
+      if (updatedBusiness) {
+        setBusinessData(updatedBusiness);
+        // If there's a selected date and service, refresh available slots
+        if (selectedDate && selectedService) {
+          const result = await findAvailableAppointments(businessData.id, selectedDate, selectedService);
+          if (result.available) {
+            setAvailableSlots(result.available);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing business data:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בטעינת נתוני העסק');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [businessData.id, selectedDate, selectedService]);
 
   // Ensure we have valid business data
   if (!route?.params?.business) {
@@ -60,11 +87,6 @@ const SalonDetails = ({ route }) => {
     );
   }
 
-  const businessData = route.params.business;
-  const businessId = businessData.id;
-  console.log(`Loading business: ${businessId}`);
-
-  // Initialize default values for optional fields
   const defaultBusinessData = {
     name: businessData.name || 'שם העסק לא זמין',
     about: businessData.about || 'אין תיאור זמין',
@@ -102,7 +124,7 @@ const SalonDetails = ({ route }) => {
   };
 
   const formatWorkingHours = (workingHours) => {
-    if (!workingHours) return {};
+    if (!workingHours) return [];
     
     const daysMap = {
       sunday: 'ראשון',
@@ -114,11 +136,23 @@ const SalonDetails = ({ route }) => {
       saturday: 'שבת'
     };
 
-    return Object.entries(workingHours).map(([day, hours]) => ({
+    // Get array of day keys in order from Sunday to Saturday
+    const orderedDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    
+    // Get current day index (0 = Sunday, 6 = Saturday)
+    const today = new Date().getDay();
+    
+    // Reorder days to start from today
+    const reorderedDays = [
+      ...orderedDays.slice(today), // Days from today to end
+      ...orderedDays.slice(0, today) // Days from start to today
+    ];
+
+    return reorderedDays.map(day => ({
       day: daysMap[day],
-      hours: !hours.isOpen ? 'סגור' : 
-             (hours.open === '00:00' && hours.close === '00:00') ? '24 שעות' :
-             `${hours.open} - ${hours.close}`
+      hours: !workingHours[day].isOpen ? 'סגור' : 
+             (workingHours[day].open === '00:00' && workingHours[day].close === '00:00') ? '24 שעות' :
+             `${workingHours[day].open} - ${workingHours[day].close}`
     }));
   };
 
@@ -134,11 +168,11 @@ const SalonDetails = ({ route }) => {
   };
 
   const fetchAvailableSlots = async (date) => {
-    if (!businessId || !date) return [];
+    if (!businessData.id || !date) return [];
     
     try {
       setIsLoading(true);
-      return await FirebaseApi.getAvailableSlots(businessId, date);
+      return await FirebaseApi.getAvailableSlots(businessData.id, date);
     } catch (error) {
       console.error('Error fetching available slots:', error);
       Alert.alert('שגיאה', 'לא ניתן לטעון את התורים הזמינים');
@@ -273,7 +307,7 @@ const SalonDetails = ({ route }) => {
       setIsLoading(true);
       setAvailableSlots([]); // Reset slots while loading
       
-      const result = await findAvailableAppointments(businessId, date);
+      const result = await findAvailableAppointments(businessData.id, date);
       if (result.error) {
         Alert.alert('שגיאה', result.error);
         return;
@@ -298,7 +332,7 @@ const SalonDetails = ({ route }) => {
     if (selectedDate) {
       setIsLoading(true);
       try {
-        const result = await findAvailableAppointments(businessId, selectedDate, service);
+        const result = await findAvailableAppointments(businessData.id, selectedDate, service);
         if (result.error) {
           Alert.alert('שגיאה', result.error);
           return;
@@ -349,7 +383,7 @@ const SalonDetails = ({ route }) => {
       const endTime = new Date(slotTime.toDate().getTime() + serviceDuration * 60000);
       
       const hasOverlap = await FirebaseApi.checkOverlappingAppointments(
-        businessId,
+        businessData.id,
         slotTime,
         endTime
       );
@@ -357,14 +391,14 @@ const SalonDetails = ({ route }) => {
       if (hasOverlap) {
         Alert.alert('שגיאה', 'התור כבר נתפס על ידי לקוח אחר, נא לבחור מועד אחר');
         // Refresh available slots
-        const result = await findAvailableAppointments(businessId, selectedDate, selectedService);
+        const result = await findAvailableAppointments(businessData.id, selectedDate, selectedService);
         setAvailableSlots(result.available);
         return;
       }
 
       // Create the appointment with denormalized data
       await FirebaseApi.createAppointment(
-        businessId,
+        businessData.id,
         user.uid,
         selectedService.id,
         slotTime,
@@ -832,7 +866,17 @@ const SalonDetails = ({ route }) => {
 
   return (
     <View style={styles.container}>
-      <ScrollView ref={scrollViewRef}>
+      <ScrollView 
+        ref={scrollViewRef}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Color.primaryColorAmaranthPurple]}
+            tintColor={Color.primaryColorAmaranthPurple}
+          />
+        }
+      >
         {renderHeader()}
         <View style={styles.headerSection}>
           {businessData.images[0] ? (
