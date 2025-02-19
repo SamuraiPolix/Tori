@@ -276,15 +276,15 @@ class FirebaseApi {
     if (!businessDoc.exists) return null;
 
     const services = businessDoc.data().services || {};
-    const service = services[serviceId];
+    const serviceData = services.find(service => service.id === serviceId);
 
-    if (!service) return null;
+    if (!serviceData) return null;
 
     return {
       id: serviceId,
-      name: service.name || 'שם שירות לא זמין',
-      duration: parseInt(service.duration) || 0,
-      price: parseInt(service.price) || 0
+      name: serviceData.name || 'שם שירות לא זמין',
+      duration: parseInt(serviceData.duration) || 0,
+      price: parseInt(serviceData.price) || 0
     };
   }
 
@@ -394,7 +394,7 @@ class FirebaseApi {
       // Get business and service data
       const businessDoc = await transaction.get(firestore().collection('businesses').doc(businessId));
       const businessData = businessDoc.data();
-      const serviceData = businessData.services[serviceId];
+      const serviceData = businessData.services.find(service => service.id === serviceId);
 
       if (!serviceData) {
         throw new Error(`Service ${serviceId} not found in business ${businessId}`);
