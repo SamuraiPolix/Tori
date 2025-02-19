@@ -22,16 +22,16 @@ I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 
 const CATEGORIES = [
-  { id: '1', name: 'מספרות' },
-  { id: '2', name: 'ספא' },
-  { id: '3', name: 'ציפורניים' },
-  { id: '4', name: 'קוסמטיקה' },
-  { id: '5', name: 'איפור' },
-  { id: '6', name: 'שיער' },
-  { id: '7', name: 'טיפולי פנים' },
-  { id: '8', name: 'טיפולי גוף' },
-  { id: '9', name: 'הסרת שיער' },
-  { id: '10', name: 'עיסוי' },
+  { id: 1, name: 'מספרות' },
+  { id: 2, name: 'ספא' },
+  { id: 3, name: 'ציפורניים' },
+  { id: 4, name: 'קוסמטיקה' },
+  { id: 5, name: 'איפור' },
+  { id: 6, name: 'שיער' },
+  { id: 7, name: 'טיפולי פנים' },
+  { id: 8, name: 'טיפולי גוף' },
+  { id: 9, name: 'הסרת שיער' },
+  { id: 10, name: 'עיסוי' },
 ];
 
 const BusinessSignupScreen = ({ navigation, route }) => {
@@ -62,15 +62,15 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     setTempSelectedCategories([]);
   };
 
-  const handleCategoryToggle = (categoryName) => {
+  const handleCategoryToggle = (category) => {
     setTempSelectedCategories(prev => {
       const currentCategories = [...prev];
-      const categoryIndex = currentCategories.indexOf(categoryName);
+      const categoryIndex = currentCategories.indexOf(category.id);
       
       if (categoryIndex >= 0) {
         currentCategories.splice(categoryIndex, 1);
       } else {
-        currentCategories.push(categoryName);
+        currentCategories.push(category.id);
       }
 
       return currentCategories;
@@ -169,40 +169,56 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     }
   };
 
+  const generateRandomData = () => {
+    const randomNum = Math.floor(Math.random() * 10000);
+    return {
+      businessName: formData.businessName.trim() || `עסק ${randomNum}`,
+      ownerName: formData.ownerName.trim() || `בעל עסק ${randomNum}`,
+      ownerPhone: formData.ownerPhone.trim() || '0501234567',
+      businessPhone: formData.businessPhone.trim() || '0501234567',
+      email: formData.email.trim() || `test${randomNum}@example.com`,
+      address: formData.address.trim() || `כתובת ${randomNum}`,
+      selectedCategories: formData.selectedCategories.length > 0 ? formData.selectedCategories : [2],
+      password: formData.password || '123456',
+      confirmPassword: formData.confirmPassword || '123456'
+    };
+  };
+
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    // Fill empty fields with random data
+    const finalData = generateRandomData();
+    setFormData(finalData);
 
     setIsSubmitting(true);
     try {
       // Create new user with Firebase Auth
-      const user = await FirebaseApi.createUserWithEmailAndPassword(formData.email, formData.password);
+      const user = await FirebaseApi.createUserWithEmailAndPassword(finalData.email, finalData.password);
 
       // Create business data object
       const businessData = {
         businessId: user.uid,
-        name: formData.businessName.trim(),
-        ownerName: formData.ownerName.trim(),
-        ownerPhone: formData.ownerPhone,
-        businessPhone: formData.businessPhone,
-        email: formData.email,
-        address: formData.address,
-        categories: formData.selectedCategories,
+        name: finalData.businessName,
+        ownerName: finalData.ownerName,
+        ownerPhone: finalData.ownerPhone,
+        businessPhone: finalData.businessPhone,
+        email: finalData.email,
+        address: finalData.address,
+        categories: finalData.selectedCategories,
         description: '',
         images: [],
         rating: 0,
         reviewsCount: 0,
-        workingHours: {
-          sunday: { open: '09:00', close: '17:00', isOpen: true },
-          monday: { open: '09:00', close: '17:00', isOpen: true },
-          tuesday: { open: '09:00', close: '17:00', isOpen: true },
-          wednesday: { open: '09:00', close: '17:00', isOpen: true },
-          thursday: { open: '09:00', close: '17:00', isOpen: true },
-          friday: { open: '09:00', close: '14:00', isOpen: true },
-          saturday: { isOpen: false, open: '00:00', close: '00:00' }
-        },
+        // workingHours: {
+        //   sunday: { open: '09:00', close: '17:00', isOpen: true },
+        //   monday: { open: '09:00', close: '17:00', isOpen: true },
+        //   tuesday: { open: '09:00', close: '17:00', isOpen: true },
+        //   wednesday: { open: '09:00', close: '17:00', isOpen: true },
+        //   thursday: { open: '09:00', close: '17:00', isOpen: true },
+        //   friday: { open: '09:00', close: '14:00', isOpen: true },
+        //   saturday: { isOpen: false, open: '00:00', close: '00:00' }
+        // },
         createdAt: FirebaseApi.getServerTimestamp(),
         updatedAt: FirebaseApi.getServerTimestamp(),
-        role: 'business',
         status: 'active'
       };
 
@@ -244,7 +260,7 @@ const BusinessSignupScreen = ({ navigation, route }) => {
       businessPhone: "0501234567",
       email: "demo@example.com",
       address: "כתובת לדוגמה",
-      selectedCategories: ['מספרות'] 
+      selectedCategories: [1] 
     };
 
     setFormData(demoData);
@@ -374,7 +390,7 @@ const BusinessSignupScreen = ({ navigation, route }) => {
               >
                 <Text style={styles.categoryButtonText}>
                   {formData.selectedCategories.length > 0
-                    ? formData.selectedCategories.join(', ')
+                    ? formData.selectedCategories.map(categoryId => CATEGORIES.find(category => category.id === categoryId).name).join(', ')
                     : 'בחר קטגוריות'}
                 </Text>
               </TouchableOpacity>
@@ -441,17 +457,17 @@ const BusinessSignupScreen = ({ navigation, route }) => {
                     key={category.id}
                     style={[
                       styles.categoryItem,
-                      tempSelectedCategories.includes(category.name) && styles.categoryItemSelected
+                      tempSelectedCategories.includes(category.id) && styles.categoryItemSelected
                     ]}
-                    onPress={() => handleCategoryToggle(category.name)}
+                    onPress={() => handleCategoryToggle(category)}
                   >
                     <Text style={[
                       styles.categoryItemText,
-                      tempSelectedCategories.includes(category.name) && styles.categoryItemTextSelected
+                      tempSelectedCategories.includes(category.id) && styles.categoryItemTextSelected
                     ]}>
                       {category.name}
                     </Text>
-                    {tempSelectedCategories.includes(category.name) && (
+                    {tempSelectedCategories.includes(category.id) && (
                       <Text style={styles.checkmark}>✓</Text>
                     )}
                   </TouchableOpacity>
