@@ -178,6 +178,9 @@ const SalonDetails = ({ route }) => {
       const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       const workingHours = businessData.workingHours[daysMap[dayOfWeek]];
 
+      console.log('startOfDay:', startOfDay);
+      console.log('Working hours:', workingHours);
+
       if (!workingHours.isOpen) {
         return { available: [], booked: bookedSlots, error: 'Business is closed on this day' };
       }
@@ -654,14 +657,22 @@ const SalonDetails = ({ route }) => {
     const currentDay = days[now.getDay()];
     const currentHours = businessData.workingHours[currentDay];
     
-    if (currentHours.open === 'closed') return false;
+    // console.log('Current day:', currentDay);
+    // console.log('Current hours:', currentHours);
+    // console.log('now:', now.toISOString());
+    
+    if (!currentHours.isOpen) return false;
     
     const currentTime = now.getHours() * 60 + now.getMinutes();
-    const [openHour, openMinute] = currentHours.open.split(':');
-    const [closeHour, closeMinute] = currentHours.close.split(':');
+    const [openHour, openMinute] = currentHours.open.split(':').map(Number);
+    const [closeHour, closeMinute] = currentHours.close.split(':').map(Number);
     
     const openTime = openHour * 60 + openMinute;
     const closeTime = closeHour * 60 + closeMinute;
+    
+    // console.log('Current time:', currentTime);
+    // console.log('Open time:', openTime);
+    // console.log('Close time:', closeTime);
     
     return currentTime >= openTime && currentTime <= closeTime;
   };
