@@ -417,6 +417,10 @@ class FirebaseApi {
         updatedAt: now
       };
 
+      if (businessData.scheduleSettings.autoApprove) {
+        appointmentData.status = 'approved';
+      }
+
       // Only add notes if it's not null
       if (notes !== null) {
         appointmentData.notes = notes;
