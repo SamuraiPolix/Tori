@@ -1,6 +1,0 @@
-npm install -g firebase-tools@latest
-firebase login
-cd functions
-npm install
-firebase deploy --only functionsnode_modules/
-*.local
