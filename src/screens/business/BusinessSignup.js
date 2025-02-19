@@ -22,16 +22,16 @@ I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 
 const CATEGORIES = [
-  { id: '1', name: 'מספרות' },
-  { id: '2', name: 'ספא' },
-  { id: '3', name: 'ציפורניים' },
-  { id: '4', name: 'קוסמטיקה' },
-  { id: '5', name: 'איפור' },
-  { id: '6', name: 'שיער' },
-  { id: '7', name: 'טיפולי פנים' },
-  { id: '8', name: 'טיפולי גוף' },
-  { id: '9', name: 'הסרת שיער' },
-  { id: '10', name: 'עיסוי' },
+  { id: 1, name: 'מספרות' },
+  { id: 2, name: 'ספא' },
+  { id: 3, name: 'ציפורניים' },
+  { id: 4, name: 'קוסמטיקה' },
+  { id: 5, name: 'איפור' },
+  { id: 6, name: 'שיער' },
+  { id: 7, name: 'טיפולי פנים' },
+  { id: 8, name: 'טיפולי גוף' },
+  { id: 9, name: 'הסרת שיער' },
+  { id: 10, name: 'עיסוי' },
 ];
 
 const BusinessSignupScreen = ({ navigation, route }) => {
@@ -62,15 +62,15 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     setTempSelectedCategories([]);
   };
 
-  const handleCategoryToggle = (categoryName) => {
+  const handleCategoryToggle = (category) => {
     setTempSelectedCategories(prev => {
       const currentCategories = [...prev];
-      const categoryIndex = currentCategories.indexOf(categoryName);
+      const categoryIndex = currentCategories.indexOf(category.id);
       
       if (categoryIndex >= 0) {
         currentCategories.splice(categoryIndex, 1);
       } else {
-        currentCategories.push(categoryName);
+        currentCategories.push(category.id);
       }
 
       return currentCategories;
@@ -244,7 +244,7 @@ const BusinessSignupScreen = ({ navigation, route }) => {
       businessPhone: "0501234567",
       email: "demo@example.com",
       address: "כתובת לדוגמה",
-      selectedCategories: ['מספרות'] 
+      selectedCategories: [1] 
     };
 
     setFormData(demoData);
@@ -374,7 +374,7 @@ const BusinessSignupScreen = ({ navigation, route }) => {
               >
                 <Text style={styles.categoryButtonText}>
                   {formData.selectedCategories.length > 0
-                    ? formData.selectedCategories.join(', ')
+                    ? formData.selectedCategories.map(categoryId => CATEGORIES.find(category => category.id === categoryId).name).join(', ')
                     : 'בחר קטגוריות'}
                 </Text>
               </TouchableOpacity>
@@ -441,17 +441,17 @@ const BusinessSignupScreen = ({ navigation, route }) => {
                     key={category.id}
                     style={[
                       styles.categoryItem,
-                      tempSelectedCategories.includes(category.name) && styles.categoryItemSelected
+                      tempSelectedCategories.includes(category.id) && styles.categoryItemSelected
                     ]}
-                    onPress={() => handleCategoryToggle(category.name)}
+                    onPress={() => handleCategoryToggle(category)}
                   >
                     <Text style={[
                       styles.categoryItemText,
-                      tempSelectedCategories.includes(category.name) && styles.categoryItemTextSelected
+                      tempSelectedCategories.includes(category.id) && styles.categoryItemTextSelected
                     ]}>
                       {category.name}
                     </Text>
-                    {tempSelectedCategories.includes(category.name) && (
+                    {tempSelectedCategories.includes(category.id) && (
                       <Text style={styles.checkmark}>✓</Text>
                     )}
                   </TouchableOpacity>
