@@ -100,11 +100,11 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
         minTimeBeforeBooking: parseInt(minTimeBeforeBooking),
         allowCancellation,
         cancellationTimeLimit: parseInt(cancellationTimeLimit),
-        workingHours,
         updatedAt: FirebaseApi.getServerTimestamp()
       };
 
       await FirebaseApi.updateBusinessSchedule(currentUser.uid, scheduleSettings);
+      await FirebaseApi.updateBusinessWorkingHours(currentUser.uid, workingHours);
 
       navigation.reset({
         index: 0,
@@ -114,7 +114,8 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
             businessId: currentUser.uid,
             businessData: {
               ...businessData,
-              schedule: scheduleSettings
+              scheduleSettings: scheduleSettings,
+              workingHours: workingHours
             }
           }
         }],
@@ -230,7 +231,8 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
             הגדר את מסגרת הזמנים לקביעת וביטול תורים
           </Text>
           
-          <View style={styles.timeSettingContainer}>
+          {/* Not used for now */}
+          {/* <View style={styles.timeSettingContainer}>
             <View style={styles.timeSettingHeader}>
               <Text style={styles.timeSettingLabel}>⚡️ זמן מינימלי לפני התור</Text>
               <Text style={styles.timeSettingUnit}>דקות</Text>
@@ -243,9 +245,9 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
               placeholder="60"
               textAlign="center"
             />
-          </View>
+          </View> */}
 
-          <View style={styles.timeSettingContainer}>
+          {/* <View style={styles.timeSettingContainer}>
             <View style={styles.timeSettingHeader}>
               <Text style={styles.timeSettingLabel}>📆 ימים מקסימלי להזמנה מראש</Text>
               <Text style={styles.timeSettingUnit}>ימים</Text>
@@ -258,7 +260,7 @@ const BusinessScheduleSetup = ({ navigation, route }) => {
               placeholder="30"
               textAlign="center"
             />
-          </View>
+          </View> */}
 
           {allowCancellation && (
             <View style={styles.timeSettingContainer}>
