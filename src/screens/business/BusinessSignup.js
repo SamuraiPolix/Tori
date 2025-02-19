@@ -219,7 +219,6 @@ const BusinessSignupScreen = ({ navigation, route }) => {
         },
         createdAt: FirebaseApi.getServerTimestamp(),
         updatedAt: FirebaseApi.getServerTimestamp(),
-        role: 'business',
         status: 'active'
       };
 
