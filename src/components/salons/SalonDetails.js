@@ -531,8 +531,11 @@ const SalonDetails = ({ route }) => {
     const dates = [];
     const today = new Date();
     
+    // Determine start index based on allowSameDayBooking setting
+    const startIndex = (!businessData.scheduleSettings?.allowSameDayBooking) ? 1 : 0;
+    
     // Generate next 30 days
-    for (let i = 0; i < 30; i++) {
+    for (let i = startIndex; i < 30; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push(date.toISOString().split('T')[0]);
