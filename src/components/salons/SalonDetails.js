@@ -729,52 +729,62 @@ const SalonDetails = ({ route }) => {
         return (
           <View style={styles.servicesContainer}>
             <Text style={styles.sectionTitle}>בחר שירות:</Text>
-            {businessData.services.map((service) => (
-              <TouchableOpacity
-                key={service.id}
-                style={[
-                  styles.serviceItem,
-                  selectedService?.id === service.id && styles.selectedService
-                ]}
-                onPress={() => handleServiceSelect(service)}
-              >
-                <View style={styles.serviceInfo}>
+            {businessData.services && businessData.services.length > 0 ? (
+              businessData.services.map((service) => (
+                <TouchableOpacity
+                  key={service.id}
+                  style={[
+                    styles.serviceItem,
+                    selectedService?.id === service.id && styles.selectedService
+                  ]}
+                  onPress={() => handleServiceSelect(service)}
+                >
+                  <View style={styles.serviceInfo}>
+                    <Text style={[
+                      styles.serviceText,
+                      selectedService?.id === service.id && styles.selectedServiceText
+                    ]}>
+                      {service.name}
+                    </Text>
+                    <Text style={styles.serviceDuration}>
+                      {service.duration} דקות
+                    </Text>
+                  </View>
                   <Text style={[
-                    styles.serviceText,
+                    styles.servicePrice,
                     selectedService?.id === service.id && styles.selectedServiceText
                   ]}>
-                    {service.name}
+                    ₪{service.price}
                   </Text>
-                  <Text style={styles.serviceDuration}>
-                    {service.duration} דקות
-                  </Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={styles.emptyServices}>
+                <Text style={styles.emptyText}>לעסק זה אין שירותים זמינים</Text>
+              </View>
+            )}
+            
+            {businessData.services && businessData.services.length > 0 && (
+              <>
+                <View 
+                  onLayout={(event) => {
+                    const { y } = event.nativeEvent.layout;
+                    setDatePosition(y);
+                  }}
+                >
+                  {renderDateSelector()}
                 </View>
-                <Text style={[
-                  styles.servicePrice,
-                  selectedService?.id === service.id && styles.selectedServiceText
-                ]}>
-                  ₪{service.price}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            
-            <View 
-              onLayout={(event) => {
-                const { y } = event.nativeEvent.layout;
-                setDatePosition(y);
-              }}
-            >
-              {renderDateSelector()}
-            </View>
-            
-            <View 
-              onLayout={(event) => {
-                const { y } = event.nativeEvent.layout;
-                setTimePosition(y);
-              }}
-            >
-              {renderTimeSelector()}
-            </View>
+                
+                <View 
+                  onLayout={(event) => {
+                    const { y } = event.nativeEvent.layout;
+                    setTimePosition(y);
+                  }}
+                >
+                  {renderTimeSelector()}
+                </View>
+              </>
+            )}
           </View>
         );
       case 'gallery':
@@ -1483,6 +1493,17 @@ const styles = StyleSheet.create({
   },
   selectedDateText: {
     color: Color.grayscaleColorWhite,
+  },
+  emptyServices: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginTop: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 
