@@ -169,24 +169,41 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     }
   };
 
+  const generateRandomData = () => {
+    const randomNum = Math.floor(Math.random() * 10000);
+    return {
+      businessName: formData.businessName.trim() || `עסק ${randomNum}`,
+      ownerName: formData.ownerName.trim() || `בעל עסק ${randomNum}`,
+      ownerPhone: formData.ownerPhone.trim() || '0501234567',
+      businessPhone: formData.businessPhone.trim() || '0501234567',
+      email: formData.email.trim() || `test${randomNum}@example.com`,
+      address: formData.address.trim() || `כתובת ${randomNum}`,
+      selectedCategories: formData.selectedCategories.length > 0 ? formData.selectedCategories : [2],
+      password: formData.password || '123456',
+      confirmPassword: formData.confirmPassword || '123456'
+    };
+  };
+
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    // Fill empty fields with random data
+    const finalData = generateRandomData();
+    setFormData(finalData);
 
     setIsSubmitting(true);
     try {
       // Create new user with Firebase Auth
-      const user = await FirebaseApi.createUserWithEmailAndPassword(formData.email, formData.password);
+      const user = await FirebaseApi.createUserWithEmailAndPassword(finalData.email, finalData.password);
 
       // Create business data object
       const businessData = {
         businessId: user.uid,
-        name: formData.businessName.trim(),
-        ownerName: formData.ownerName.trim(),
-        ownerPhone: formData.ownerPhone,
-        businessPhone: formData.businessPhone,
-        email: formData.email,
-        address: formData.address,
-        categories: formData.selectedCategories,
+        name: finalData.businessName,
+        ownerName: finalData.ownerName,
+        ownerPhone: finalData.ownerPhone,
+        businessPhone: finalData.businessPhone,
+        email: finalData.email,
+        address: finalData.address,
+        categories: finalData.selectedCategories,
         description: '',
         images: [],
         rating: 0,
