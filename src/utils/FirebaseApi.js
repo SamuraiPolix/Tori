@@ -449,15 +449,20 @@ class FirebaseApi {
   }
 
   static async getBusinessesByCategory(categoryId) {
-    const snapshot = await firestore()
-      .collection('businesses')
-      .where('categories', 'array-contains', categoryId)
-      .get();
+    try {
+      const snapshot = await firestore()
+        .collection('businesses')
+        .where('categories', 'array-contains', Number(categoryId))
+        .get();
 
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting businesses by category:', error);
+      return [];
+    }
   }
 
   static async getTopBusinesses(categoryId, limit = 10) {
@@ -1887,24 +1892,40 @@ class FirebaseApi {
     }
   }
 
-  static async handlePhoneAuthentication() {
-    console.log('Handling phone authentication');
-    const currentUser = this.getCurrentUser();
-    if (!currentUser) {
-      throw new Error('No authenticated user found');
-    }
+  static async getAllBusinesses() {
+    try {
+      const snapshot = await firestore()
+        .collection('businesses')
+        .get();
 
-    // Try to get existing user data
-    const userData = await this.getUserData(currentUser.uid);
-    if (userData) {
-      console.log('Existing user found:', userData);
-      // Update last login
-      await this.updateLastLogin(currentUser.uid);
-      return { user: currentUser, userData, isExisting: true };
+      const businesses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      console.log('All businesses:', businesses);
+      console.log('First business data structure:', businesses[0]);
+      return businesses;
+    } catch (error) {
+      console.error('Error getting all businesses:', error);
+      return [];
     }
+  }
 
-    console.log('No existing user found, needs to create new user');
-    return { user: currentUser, isExisting: false };
+  static async getBusinessesByCategory(categoryId) {
+    try {
+      const snapshot = await firestore()
+        .collection('businesses')
+        .where('categories', 'array-contains', Number(categoryId))
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting businesses by category:', error);
+      return [];
+    }
   }
 }
 
