@@ -134,7 +134,18 @@ const HomeScreen = ({ navigation }) => {
 
   const handleBusinessPress = (business) => {
     console.log('Navigating to business details with data:', business);
-    navigation.navigate('SalonDetails', { business });
+    navigation.navigate('SalonDetails', { 
+      business,
+      onUpdate: (updatedBusiness) => {
+        // Update the business in both lists
+        if (salonsListRef.current) {
+          salonsListRef.current.updateBusiness(updatedBusiness);
+        }
+        if (nearbySalonsRef.current) {
+          nearbySalonsRef.current.updateBusiness(updatedBusiness);
+        }
+      }
+    });
   };
 
   const handleSearch = () => {

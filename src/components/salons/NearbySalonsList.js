@@ -15,7 +15,18 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
 
   // Expose fetchNearbySalons to parent through ref
   useImperativeHandle(ref, () => ({
-    fetchNearbySalons
+    fetchNearbySalons,
+    updateBusiness: (updatedBusiness) => {
+      setSalons(prevSalons => 
+        prevSalons.map(salon => {
+          if (salon.id === updatedBusiness.id) {
+            // Preserve the distance property when updating
+            return { ...updatedBusiness, distance: salon.distance };
+          }
+          return salon;
+        })
+      );
+    }
   }));
 
   useEffect(() => {
