@@ -678,16 +678,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   forgotPasswordButton: {
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
     marginTop: 10,
     marginBottom: 10,
     padding: 5,
+    marginLeft: 5,
   },
   forgotPasswordText: {
-    color: Color.primary,
+    color: '#2196F3',
     fontFamily: FontFamily.regular,
     fontSize: 14,
-    textAlign: 'center',
   },
 });
 
