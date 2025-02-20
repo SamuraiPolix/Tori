@@ -65,6 +65,7 @@ import Saved from './src/screens/Saved';
 import PersonalDetails from './src/screens/PersonalDetails';
 import NotificationSettings from './src/screens/NotificationSettings';
 import About from './src/screens/About';
+import FullListScreen from './src/screens/FullListScreen';
 
 // Components
 import BusinessSidebar from "./src/components/BusinessSidebar";
@@ -160,6 +161,18 @@ const AppNavigator = () => {
         name="About"
         component={About}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="FullList" 
+        component={FullListScreen}
+        options={{ 
+          headerShown: true,
+          headerBackVisible: true,
+          headerTitle: "",
+          headerTitleStyle: {
+            fontFamily: "Assistant-Bold",
+          },
+        }}
       />
     </Stack.Navigator>
   );
