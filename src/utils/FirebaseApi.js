@@ -1928,26 +1928,47 @@ class FirebaseApi {
     }
   }
 
-  static async searchBusinesses(searchText) {
+  static async searchBusinesses(searchText, filters = null) {
     try {
-      // Get all businesses first (in a real app, we'd use a proper search index)
-      const snapshot = await firestore()
-        .collection('businesses')
-        .get();
+      const db = firestore();
+      const businessesRef = db.collection('businesses');
+      const snapshot = await businessesRef.get();
 
-      const businesses = snapshot.docs.map(doc => ({
+      // Convert to array with fullData flag
+      let businesses = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        fullData: true
       }));
 
-      const searchLower = searchText.toLowerCase();
-      
-      // Filter businesses that match either name or address
-      return businesses.filter(business => 
-        business.name?.toLowerCase().includes(searchLower) ||
-        business.address?.toLowerCase().includes(searchLower) ||
-        business.city?.toLowerCase().includes(searchLower)
-      );
+      // Filter by search text if provided
+      if (searchText && searchText.length > 0) {
+        const searchLower = searchText.toLowerCase();
+        businesses = businesses.filter(business => {
+          const nameMatch = business.name?.toLowerCase().includes(searchLower);
+          const addressMatch = business.address?.toLowerCase().includes(searchLower);
+          return nameMatch || addressMatch;
+        });
+      }
+
+      // Apply rating filter if provided
+      if (filters?.rating) {
+        businesses = businesses.filter(business => 
+          business.rating >= filters.rating
+        );
+      }
+
+      // Apply price filter if provided
+      if (filters?.price) {
+        businesses = businesses.filter(business => 
+          business.priceLevel <= filters.price
+        );
+      }
+
+      // Sort by rating (highest first)
+      businesses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+
+      return businesses;
     } catch (error) {
       console.error('Error searching businesses:', error);
       return [];
