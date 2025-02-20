@@ -92,6 +92,37 @@ const SalonDetails = ({ route }) => {
     );
   }
 
+  const defaultBusinessData = {
+    name: businessData.name || 'שם העסק לא זמין',
+    about: businessData.about || 'אין תיאור זמין',
+    rating: businessData.rating || 0,
+    reviewsCount: businessData.reviewsCount || 0,
+    address: businessData.address || 'כתובת לא זמינה',
+    businessPhone: businessData.businessPhone || '',
+    email: businessData.email || '',
+    images: businessData.images || [],
+    services: businessData.services || [],
+    workingHours: businessData.workingHours || {
+      sunday: { close: '', isOpen: false, open: '' },
+      monday: { close: '', isOpen: false, open: '' },
+      tuesday: { close: '', isOpen: false, open: '' },
+      wednesday: { close: '', isOpen: false, open: '' },
+      thursday: { close: '', isOpen: false, open: '' },
+      friday: { close: '', isOpen: false, open: '' },
+      saturday: { close: '', isOpen: false, open: '' }
+    },
+    scheduleSettings: businessData.scheduleSettings || {
+      allowCancellation: false,
+      allowSameDayBooking: false,
+      autoApprove: false,
+      cancellationTimeLimit: 0,
+      maxFutureBookingDays: 30,
+      minTimeBeforeBooking: 0,
+      slotDuration: 30,
+      notificationsEnabled: false,
+    }
+  };
+
   const formatWorkingHours = (workingHours) => {
     // if (!workingHours) return [];
     
