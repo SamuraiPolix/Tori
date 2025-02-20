@@ -284,7 +284,7 @@ export default function BusinessServicesSettings({ services, onServicesChange })
                 style={styles.updateButton}
                 onPress={handleUpdateService}
               >
-                <Icon name="content-save" size={20} color="#ffffff" />
+                <Icon name="save" size={20} color="#ffffff" />
                 <Text style={styles.updateButtonText}>שמור שינויים</Text>
               </Pressable>
             </View>
