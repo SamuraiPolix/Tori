@@ -156,9 +156,13 @@ const HomeScreen = ({ navigation }) => {
     setShowFilters(true);
   };
 
-  const applyFilters = () => {
-    console.log('Applying filters:', filters);
-    setShowFilters(false);
+  const handleSearchResults = (businesses, title) => {
+    // Navigate to the list screen with the search results
+    navigation.navigate('FullList', {
+      title: title,
+      data: businesses,
+      type: 'salon'
+    });
   };
 
   const handleTabPress = (tabId) => {
@@ -215,8 +219,8 @@ const HomeScreen = ({ navigation }) => {
             {/* Search Bar */}
             <View style={styles.searchBarContainer}>
               <SearchBar 
-                onPress={() => navigation.navigate('Search')}
                 onFilterPress={handleFilterPress}
+                onBusinessSelect={handleSearchResults}
               />
             </View>
           </View>
