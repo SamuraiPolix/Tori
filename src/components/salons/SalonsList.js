@@ -7,44 +7,46 @@ import FirebaseApi from '../../utils/FirebaseApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
-  const [salons, setSalons] = useState([]);
+const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
+  const [allSalons, setAllSalons] = useState([]);
+  const [displaySalons, setDisplaySalons] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Expose fetchSalons to parent through ref
-  // We use it to expose the fetchSalons function to the parent component, so that the parent
-  // can call fetchSalons whenever it wants.
-  useImperativeHandle(ref, () => ({
-    fetchSalons,
-    updateBusiness: (updatedBusiness) => {
-      setSalons(prevSalons => 
-        prevSalons.map(salon => 
-          salon.id === updatedBusiness.id ? updatedBusiness : salon
-        )
-      );
-    }
-  }));
 
   const fetchSalons = async () => {
     try {
+      setLoading(true);
       const category = await FirebaseApi.getHaircutCategory();
+      
       if (!category) {
-        console.error('No haircut category found');
+        setLoading(false);
         return;
       }
 
-      const topSalons = await FirebaseApi.getTopBusinesses(category.categoryId, 10);
-      setSalons(topSalons);
+      const fetchedSalons = await FirebaseApi.getTopBusinesses(category.categoryId, 100);
+      setAllSalons(fetchedSalons);
+      setDisplaySalons(fetchedSalons.slice(0, 10));
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching salons:', error);
-    } finally {
       setLoading(false);
     }
   };
 
+  useImperativeHandle(ref, () => ({
+    fetchSalons
+  }));
+
   useEffect(() => {
     fetchSalons();
   }, []);
+
+  const handleViewAll = () => {
+    navigation.navigate('FullList', {
+      title: 'כל העסקים',
+      data: allSalons.map(salon => ({ ...salon, fullData: true })),
+      type: 'salon'
+    });
+  };
 
   if (loading) {
     return (
@@ -59,7 +61,7 @@ const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
     );
   }
 
-  if (salons.length === 0) {
+  if (!displaySalons.length) {
     return null;
   }
 
@@ -67,7 +69,7 @@ const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>מספרות מובילות</Text>
-        <TouchableOpacity onPress={onSeeAllPress}>
+        <TouchableOpacity onPress={handleViewAll}>
           <Text style={styles.seeAll}>הכל</Text>
         </TouchableOpacity>
       </View>
@@ -77,7 +79,7 @@ const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
       >
-        {salons.map((salon) => (
+        {displaySalons.map((salon) => (
           <View key={salon.id} style={styles.cardContainer}>
             <SalonCard
               salon={salon}
