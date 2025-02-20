@@ -1,6 +1,7 @@
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
+import storage from '@react-native-firebase/storage';
 
 class FirebaseApi {
   // Auth methods
@@ -1436,6 +1437,70 @@ class FirebaseApi {
       return reviewRef.id;
     } catch (error) {
       console.error('Error creating review:', error);
+      throw error;
+    }
+  }
+
+  // Image handling methods
+  static async uploadImage(uri, path) {
+    try {
+      // Convert image to base64 first
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // Convert blob to base64
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const base64data = reader.result.split(',')[1];
+            
+            // Create reference to the storage path
+            const storageRef = storage().ref(path);
+            
+            // Upload base64 data
+            const task = storageRef.putString(base64data, 'base64');
+            
+            // Monitor upload progress if needed
+            task.on('state_changed', 
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log(`Upload is ${progress}% complete`);
+              },
+              (error) => {
+                reject(error);
+              },
+              async () => {
+                try {
+                  // Get download URL after upload completes
+                  const downloadURL = await storageRef.getDownloadURL();
+                  resolve(downloadURL);
+                } catch (error) {
+                  reject(error);
+                }
+              }
+            );
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async uploadBusinessImages(userId, images) {
+    try {
+      const uploadPromises = images.map((uri, index) => {
+        const path = `businesses/${userId}/images/image_${Date.now()}_${index}.jpg`;
+        return this.uploadImage(uri, path);
+      });
+
+      return await Promise.all(uploadPromises);
+    } catch (error) {
       throw error;
     }
   }

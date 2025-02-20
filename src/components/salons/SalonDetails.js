@@ -124,7 +124,7 @@ const SalonDetails = ({ route }) => {
   };
 
   const formatWorkingHours = (workingHours) => {
-    if (!workingHours) return [];
+    // if (!workingHours) return [];
     
     const daysMap = {
       sunday: 'ראשון',
@@ -148,12 +148,17 @@ const SalonDetails = ({ route }) => {
       ...orderedDays.slice(0, today) // Days from start to today
     ];
 
-    return reorderedDays.map(day => ({
-      day: daysMap[day],
-      hours: !workingHours[day].isOpen ? 'סגור' : 
-             (workingHours[day].open === '00:00' && workingHours[day].close === '00:00') ? '24 שעות' :
-             `${workingHours[day].open} - ${workingHours[day].close}`
-    }));
+    return reorderedDays.map(day => {
+      if (!workingHours || !workingHours[day]) {
+        return { day: daysMap[day], hours: 'סגור' };
+      }
+      return {
+        day: daysMap[day],
+        hours: !workingHours[day].isOpen ? 'סגור' : 
+               (workingHours[day].open === '00:00' && workingHours[day].close === '00:00') ? '24 שעות' :
+               `${workingHours[day].open} - ${workingHours[day].close}`
+      };
+    });
   };
 
   const scrollViewRef = React.useRef(null);
@@ -630,6 +635,7 @@ const SalonDetails = ({ route }) => {
   };
 
   const renderGallery = () => {
+    console.log('Rendering gallery: ', businessData.images);
     if (!businessData.images || businessData.images.length === 0) {
       return (
         <View style={styles.emptyGallery}>
@@ -692,6 +698,7 @@ const SalonDetails = ({ route }) => {
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const now = new Date();
     const currentDay = days[now.getDay()];
+    if (!businessData.workingHours || !businessData.workingHours[currentDay]) return false;
     const currentHours = businessData.workingHours[currentDay];
     
     // console.log('Current day:', currentDay);
@@ -872,7 +879,7 @@ const SalonDetails = ({ route }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color={Color.textColorPrimary} />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
     );
@@ -1027,8 +1034,8 @@ const SalonDetails = ({ route }) => {
           />
         }
       >
-        {renderHeader()}
         <View style={styles.headerSection}>
+          {renderHeader()}
           {businessData.images[0] ? (
             <Image
               style={styles.coverImage}
@@ -1103,14 +1110,21 @@ const styles = StyleSheet.create({
     backgroundColor: Color.backgroundColorPrimary,
   },
   header: {
+    position: 'absolute',
+    top: 25,
+    left: 1,
+    right: 0,
+    zIndex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: Color.backgroundColorPrimary,
+    backgroundColor: 'transparent',
   },
   backButton: {
+    margin: 16,
     padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   headerSection: {
     height: 300,
