@@ -50,11 +50,15 @@ export default function BusinessSettings({ navigation }) {
           about: data.about || '',
           workHours: data.workingHours || {},
           services: data.services || [],
-          settings: {
-            notificationsEnabled: data.settings?.notificationsEnabled ?? true,
-            autoConfirm: data.settings?.autoConfirm ?? false,
-            allowOnlineBooking: data.settings?.allowOnlineBooking ?? true,
-            reminderTime: data.settings?.reminderTime ?? 60,
+          scheduleSettings: data.scheduleSettings || {
+            slotDuration,
+            autoApprove,
+            allowSameDayBooking,
+            maxFutureBookingDays: parseInt(maxFutureBookingDays),
+            minTimeBeforeBooking: parseInt(minTimeBeforeBooking),
+            allowCancellation,
+            cancellationTimeLimit: parseInt(cancellationTimeLimit),
+            updatedAt: FirebaseApi.getServerTimestamp()
           }
         });
       }
@@ -85,7 +89,7 @@ export default function BusinessSettings({ navigation }) {
         about: businessData.about,
         workingHours: businessData.workHours,
         services: businessData.services,
-        settings: businessData.settings,
+        scheduleSettings: businessData.scheduleSettings,
         updatedAt: FirebaseApi.getServerTimestamp()
       });
 
@@ -213,42 +217,48 @@ export default function BusinessSettings({ navigation }) {
           </View>
 
           <View style={styles.settingItem}>
-            <View style={styles.settingText}>
+            <View style={styles.settingInfo}>
               <Text style={styles.settingTitle}>
                 התראות
               </Text>
               <Text style={styles.settingDescription}>קבל התראות על הזמנות חדשות</Text>
             </View>
             <Switch
-              value={businessData.settings.notificationsEnabled}
+              value={businessData.scheduleSettings?.notificationsEnabled ?? false}
               onValueChange={(value) => 
                 setBusinessData({
                   ...businessData, 
-                  settings: {...businessData.settings, notificationsEnabled: value}
+                  scheduleSettings: {
+                    ...businessData.scheduleSettings,
+                    notificationsEnabled: value
+                  }
                 })
               }
               trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-              thumbColor={businessData.settings.notificationsEnabled ? '#2563eb' : '#94a3b8'}
+              thumbColor={(businessData.scheduleSettings?.notificationsEnabled ?? false) ? '#2563eb' : '#94a3b8'}
             />
           </View>
 
           <View style={styles.settingItem}>
-            <View style={styles.settingText}>
+            <View style={styles.settingInfo}>
               <Text style={styles.settingTitle}>
                 אישור אוטומטי
               </Text>
               <Text style={styles.settingDescription}>אשר הזמנות באופן אוטומטי</Text>
             </View>
             <Switch
-              value={businessData.settings.autoConfirm}
+              value={businessData.scheduleSettings?.autoApprove ?? false}
               onValueChange={(value) => 
                 setBusinessData({
                   ...businessData, 
-                  settings: {...businessData.settings, autoConfirm: value}
+                  scheduleSettings: {
+                    ...businessData.scheduleSettings,
+                    autoApprove: value
+                  }
                 })
               }
               trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-              thumbColor={businessData.settings.autoConfirm ? '#2563eb' : '#94a3b8'}
+              thumbColor={(businessData.scheduleSettings?.autoApprove ?? false) ? '#2563eb' : '#94a3b8'}
             />
           </View>
         </View>
@@ -522,7 +532,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  settingText: {
+  settingInfo: {
     flex: 1,
     marginRight: 16,
   },

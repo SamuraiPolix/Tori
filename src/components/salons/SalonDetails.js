@@ -118,13 +118,8 @@ const SalonDetails = ({ route }) => {
       cancellationTimeLimit: 0,
       maxFutureBookingDays: 30,
       minTimeBeforeBooking: 0,
-      slotDuration: 30
-    },
-    settings: businessData.settings || {
-      allowOnlineBooking: false,
-      autoConfirm: false,
+      slotDuration: 30,
       notificationsEnabled: false,
-      reminderTime: 60
     }
   };
 
