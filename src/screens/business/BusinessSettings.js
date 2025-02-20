@@ -287,7 +287,7 @@ export default function BusinessSettings({ navigation }) {
           style={[styles.tab, activeTab === "general" && styles.activeTab]}
           onPress={() => setActiveTab("general")}
         >
-          <Ionicons name="card-text-outline" size={18} color={activeTab === "general" ? "#2563eb" : "#64748b"} />
+          <Ionicons name="create-outline" size={18} color={activeTab === "general" ? "#2563eb" : "#64748b"} />
           <Text style={[styles.tabText, activeTab === "general" && styles.activeTabText]}>
             פרטי העסק
           </Text>
@@ -296,7 +296,7 @@ export default function BusinessSettings({ navigation }) {
           style={[styles.tab, activeTab === "services" && styles.activeTab]}
           onPress={() => setActiveTab("services")}
         >
-          <Ionicons name="scissors-cutting" size={18} color={activeTab === "services" ? "#2563eb" : "#64748b"} />
+          <Ionicons name="cut-outline" size={18} color={activeTab === "services" ? "#2563eb" : "#64748b"} />
           <Text style={[styles.tabText, activeTab === "services" && styles.activeTabText]}>
             שירותים
           </Text>
@@ -305,7 +305,7 @@ export default function BusinessSettings({ navigation }) {
           style={[styles.tab, activeTab === "hours" && styles.activeTab]}
           onPress={() => setActiveTab("hours")}
         >
-          <Ionicons name="clock-outline" size={18} color={activeTab === "hours" ? "#2563eb" : "#64748b"} />
+          <Ionicons name="time-outline" size={18} color={activeTab === "hours" ? "#2563eb" : "#64748b"} />
           <Text style={[styles.tabText, activeTab === "hours" && styles.activeTabText]}>
             שעות פעילות
           </Text>
@@ -338,7 +338,7 @@ export default function BusinessSettings({ navigation }) {
             <ActivityIndicator color="#ffffff" />
           ) : (
             <>
-              <Ionicons name="content-save" size={20} color="#ffffff" />
+              <Ionicons name="save-outline" size={20} color="#ffffff" />
               <Text style={styles.saveButtonText}>שמור שינויים</Text>
             </>
           )}
