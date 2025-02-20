@@ -9,6 +9,7 @@ const AdminPanel = ({ navigation }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationProgress, setMigrationProgress] = useState(0);
+  const [isCleaning, setIsCleaning] = useState(false);
 
   const createAppointmentsForBusiness = async (business, startDate, db) => {
     const businessData = business.data();
@@ -170,6 +171,48 @@ const AdminPanel = ({ navigation }) => {
         "אירעה שגיאה בטעינת התורים"
       );
       setIsDeleting(false);
+    }
+  };
+
+  const cleanCategoriesWithoutId = async () => {
+    try {
+      setIsCleaning(true);
+      const db = firestore();
+      
+      // Get all categories
+      const categoriesSnapshot = await db.collection("categories").get();
+      const categoriesToDelete = categoriesSnapshot.docs.filter(doc => !doc.data().categoryId);
+
+      console.log(`Found ${categoriesToDelete.length} categories without categoryId to delete...`);
+
+      // Delete in batches of 500 (Firestore limit)
+      const batchSize = 500;
+      const batches = [];
+      let batch = db.batch();
+      let operationCount = 0;
+
+      for (const doc of categoriesToDelete) {
+        batch.delete(doc.ref);
+        operationCount++;
+
+        if (operationCount === batchSize) {
+          batches.push(batch.commit());
+          batch = db.batch();
+          operationCount = 0;
+        }
+      }
+
+      // Commit any remaining operations
+      if (operationCount > 0) {
+        batches.push(batch.commit());
+      }
+
+      await Promise.all(batches);
+      console.log(`Successfully deleted ${categoriesToDelete.length} categories without categoryId`);
+    } catch (error) {
+      console.error("Error cleaning categories:", error);
+    } finally {
+      setIsCleaning(false);
     }
   };
 
@@ -342,6 +385,16 @@ const AdminPanel = ({ navigation }) => {
             {isDeleting ? 'Deleting...' : 'Delete Available Appointments'}
           </Text>
           {isDeleting && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, isCleaning && styles.buttonDisabled]}
+          onPress={cleanCategoriesWithoutId}
+          disabled={isCleaning}>
+          <Text style={styles.buttonText}>
+            {isCleaning ? 'Cleaning...' : 'Clean Categories Without ID'}
+          </Text>
+          {isCleaning && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
         </TouchableOpacity>
 
         <TouchableOpacity
