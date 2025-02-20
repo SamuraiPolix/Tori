@@ -12,6 +12,8 @@ const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
   const [loading, setLoading] = useState(true);
 
   // Expose fetchSalons to parent through ref
+  // We use it to expose the fetchSalons function to the parent component, so that the parent
+  // can call fetchSalons whenever it wants.
   useImperativeHandle(ref, () => ({
     fetchSalons,
     updateBusiness: (updatedBusiness) => {
