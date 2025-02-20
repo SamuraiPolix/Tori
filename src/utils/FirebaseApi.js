@@ -1885,6 +1885,26 @@ class FirebaseApi {
       throw error;
     }
   }
+
+  static async handlePhoneAuthentication() {
+    console.log('Handling phone authentication');
+    const currentUser = this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No authenticated user found');
+    }
+
+    // Try to get existing user data
+    const userData = await this.getUserData(currentUser.uid);
+    if (userData) {
+      console.log('Existing user found:', userData);
+      // Update last login
+      await this.updateLastLogin(currentUser.uid);
+      return { user: currentUser, userData, isExisting: true };
+    }
+
+    console.log('No existing user found, needs to create new user');
+    return { user: currentUser, isExisting: false };
+  }
 }
 
 export default FirebaseApi;

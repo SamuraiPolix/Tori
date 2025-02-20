@@ -187,17 +187,32 @@ const Frame = ({ navigation }) => {
     }
   };
 
-  const confirmCode = async () => {
+  const handleCodeVerification = async () => {
+    if (!code) {
+      Alert.alert('שגיאה', 'נא להזין קוד אימות');
+      return;
+    }
+
     try {
       setIsLoading(true);
-      const credential = await FirebaseApi.confirmPhoneCode(confirmation, code);
+      await FirebaseApi.confirmPhoneCode(confirmation, code);
       
-      // Check if this is the first sign in
-      if (credential.additionalUserInfo?.isNewUser) {
+      // Check if user already exists
+      const { userData, isExisting } = await FirebaseApi.handlePhoneAuthentication();
+      
+      if (isExisting) {
+        // User exists, store data and navigate to home
+        await storeUserData(userData);
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
+      } else {
+        // New user, show name prompt
         setShowNamePrompt(true);
       }
     } catch (error) {
-      console.error('Verification Error:', error);
+      console.error('Error verifying code:', error);
       Alert.alert('שגיאה', 'קוד האימות שגוי');
     } finally {
       setIsLoading(false);
@@ -335,7 +350,7 @@ const Frame = ({ navigation }) => {
 
       <TouchableOpacity
         style={[styles.submitButton, phone.length === 10 && styles.submitButtonActive]}
-        onPress={confirmation ? confirmCode : handlePhoneLogin}
+        onPress={confirmation ? handleCodeVerification : handlePhoneLogin}
         disabled={
           (confirmation ? code.length !== 6 : phone.length !== 10) || 
           isLoading
