@@ -1940,10 +1940,13 @@ class FirebaseApi {
         ...doc.data()
       }));
 
-      // Filter businesses that match the search text
+      const searchLower = searchText.toLowerCase();
+      
+      // Filter businesses that match either name or address
       return businesses.filter(business => 
-        business.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        business.description?.toLowerCase().includes(searchText.toLowerCase())
+        business.name?.toLowerCase().includes(searchLower) ||
+        business.address?.toLowerCase().includes(searchLower) ||
+        business.city?.toLowerCase().includes(searchLower)
       );
     } catch (error) {
       console.error('Error searching businesses:', error);
