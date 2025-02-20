@@ -8,8 +8,9 @@ import { getDistance } from 'geolib';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
-  const [salons, setSalons] = useState([]);
+const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
+  const [allSalons, setAllSalons] = useState([]);
+  const [displaySalons, setDisplaySalons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -17,7 +18,16 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
   useImperativeHandle(ref, () => ({
     fetchNearbySalons,
     updateBusiness: (updatedBusiness) => {
-      setSalons(prevSalons => 
+      setAllSalons(prevSalons => 
+        prevSalons.map(salon => {
+          if (salon.id === updatedBusiness.id) {
+            // Preserve the distance property when updating
+            return { ...updatedBusiness, distance: salon.distance };
+          }
+          return salon;
+        })
+      );
+      setDisplaySalons(prevSalons => 
         prevSalons.map(salon => {
           if (salon.id === updatedBusiness.id) {
             // Preserve the distance property when updating
@@ -29,14 +39,11 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
     }
   }));
 
-  useEffect(() => {
-    fetchNearbySalons();
-  }, []);
-
   const fetchNearbySalons = async () => {
     try {
-      console.log('=== Starting to fetch nearby salons ===');
-      
+      setLoading(true);
+      setErrorMsg(null);
+
       // 1. Get location permission and current location
       console.log('1. Requesting location permission...');
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -114,22 +121,28 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
       // 5. Sort by distance and filter out businesses without location
       const sortedBusinesses = businessesWithDistance
         .filter(business => business.distance !== null)
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 10); // Show only closest 10
+        .sort((a, b) => a.distance - b.distance);
 
-      console.log('✅ Processed businesses:', {
-        total: businesses.length,
-        withLocation: businessesWithDistance.filter(b => b.distance !== null).length,
-        displayed: sortedBusinesses.length
-      });
-
-      setSalons(sortedBusinesses);
+      setAllSalons(sortedBusinesses);
+      setDisplaySalons(sortedBusinesses.slice(0, 10));
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching nearby salons:', error);
       setErrorMsg('Error fetching salons');
-    } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchNearbySalons();
+  }, []);
+
+  const handleViewAll = () => {
+    navigation.navigate('FullList', {
+      title: 'עסקים בקרבתך',
+      data: allSalons.map(salon => ({ ...salon, fullData: true })),
+      type: 'salon'
+    });
   };
 
   if (loading) {
@@ -145,7 +158,7 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
     );
   }
 
-  if (errorMsg || salons.length === 0) {
+  if (errorMsg || displaySalons.length === 0) {
     return null;
   }
 
@@ -153,7 +166,7 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>מספרות בסביבתך</Text>
-        <TouchableOpacity onPress={onSeeAllPress}>
+        <TouchableOpacity onPress={handleViewAll}>
           <Text style={styles.seeAll}>הכל</Text>
         </TouchableOpacity>
       </View>
@@ -163,7 +176,7 @@ const NearbySalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
       >
-        {salons.map((salon) => (
+        {displaySalons.map((salon) => (
           <View key={salon.id} style={styles.cardContainer}>
             <SalonCard
               salon={salon}

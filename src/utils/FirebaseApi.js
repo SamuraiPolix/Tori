@@ -461,6 +461,7 @@ class FirebaseApi {
   }
 
   static async getTopBusinesses(categoryId, limit = 10) {
+    console.log('Getting top businesses for category:', categoryId, 'limit:', limit);
     const snapshot = await firestore()
       .collection('businesses')
       .where('categories', 'array-contains', categoryId)
