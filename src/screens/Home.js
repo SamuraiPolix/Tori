@@ -224,7 +224,8 @@ const HomeScreen = ({ navigation }) => {
           {/* Categories */}
           <View style={styles.categoriesSection}>
             <CategoriesList 
-              onCategoryPress={handleCategoryPress}
+              onSelectCategory={handleCategoryPress}
+              navigation={navigation}
               onSeeAllPress={() => navigation.navigate('Categories')}
             />
           </View>
@@ -234,6 +235,7 @@ const HomeScreen = ({ navigation }) => {
             ref={salonsListRef}
             salons={SALONS}
             onSalonPress={handleBusinessPress} 
+            navigation={navigation}
             onSeeAllPress={() => navigation.navigate('Salons')}
           />
 
@@ -242,6 +244,7 @@ const HomeScreen = ({ navigation }) => {
             ref={nearbySalonsRef}
             salons={NEARBY_SALONS}
             onSalonPress={handleBusinessPress}
+            navigation={navigation}
             onSeeAllPress={() => navigation.navigate('NearbySalons')}
           />
 

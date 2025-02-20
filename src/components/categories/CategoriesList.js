@@ -9,7 +9,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const defaultCategoryIcon = require('../../assets/rectangle-406.png');
 
-const CategoriesList = ({ onSelectCategory }) => {
+const CategoriesList = ({ onSelectCategory, navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +47,14 @@ const CategoriesList = ({ onSelectCategory }) => {
     }
   };
 
+  const handleViewAll = () => {
+    navigation.navigate('FullList', {
+      title: 'כל הקטגוריות',
+      data: categories,
+      type: 'category'
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.section}>
@@ -64,7 +72,7 @@ const CategoriesList = ({ onSelectCategory }) => {
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>קטגוריות</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={handleViewAll}>
           <Text style={styles.seeAllButton}>הכל</Text>
         </TouchableOpacity>
       </View>
