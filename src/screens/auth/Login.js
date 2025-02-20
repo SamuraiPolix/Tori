@@ -187,17 +187,32 @@ const Frame = ({ navigation }) => {
     }
   };
 
-  const confirmCode = async () => {
+  const handleCodeVerification = async () => {
+    if (!code) {
+      Alert.alert('שגיאה', 'נא להזין קוד אימות');
+      return;
+    }
+
     try {
       setIsLoading(true);
-      const credential = await FirebaseApi.confirmPhoneCode(confirmation, code);
+      await FirebaseApi.confirmPhoneCode(confirmation, code);
       
-      // Check if this is the first sign in
-      if (credential.additionalUserInfo?.isNewUser) {
+      // Check if user already exists
+      const { userData, isExisting } = await FirebaseApi.handlePhoneAuthentication();
+      
+      if (isExisting) {
+        // User exists, store data and navigate to home
+        await storeUserData(userData);
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
+      } else {
+        // New user, show name prompt
         setShowNamePrompt(true);
       }
     } catch (error) {
-      console.error('Verification Error:', error);
+      console.error('Error verifying code:', error);
       Alert.alert('שגיאה', 'קוד האימות שגוי');
     } finally {
       setIsLoading(false);
@@ -209,30 +224,49 @@ const Frame = ({ navigation }) => {
       Alert.alert('שגיאה', 'נא להזין שם');
       return;
     }
-  
+
     try {
       setIsLoading(true);
-      const currentUser = FirebaseApi.getCurrentUser();
-      if (currentUser) {
-        await FirebaseApi.updateUserProfile(currentUser.uid, {
-          displayName: userName.trim()
-        });
-
-        const userData = {
-          uid: currentUser.uid,
-          name: userName.trim(),
-          email: currentUser.email || null,
-          phoneNumber: currentUser.phoneNumber || null
-        };
-
-        await FirebaseApi.createNewUser(userData);
-        await storeUserData(userData);
-        setShowNamePrompt(false);
-        navigation.navigate('Home');
-      }
+      const { user, userData } = await FirebaseApi.createUserAfterPhoneAuth(userName);
+      
+      // Store user data locally
+      await storeUserData(userData);
+      
+      // Navigate to home
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
     } catch (error) {
       console.error('Error saving user data:', error);
-      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת הנתונים');
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת פרטי המשתמש');
+    } finally {
+      setIsLoading(false);
+      setShowNamePrompt(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('שגיאה', 'נא להזין כתובת אימייל');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await FirebaseApi.resetPassword(email);
+      Alert.alert('הודעה', 'נשלח אימייל עם קישור לאיפוס הסיסמה');
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      let errorMessage = 'אירעה שגיאה בשליחת האימייל';
+      
+      if (error.code === 'auth/invalid-email') {
+        errorMessage = 'כתובת האימייל אינה תקינה';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'משתמש לא קיים במערכת';
+      }
+      
+      Alert.alert('שגיאה', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -263,6 +297,14 @@ const Frame = ({ navigation }) => {
           autoCapitalize="none"
         />
       </View>
+
+      <TouchableOpacity
+        style={styles.forgotPasswordButton}
+        onPress={handleForgotPassword}
+        disabled={isLoading}
+      >
+        <Text style={styles.forgotPasswordText}>שכחת סיסמה?</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={[styles.submitButton, (email.length > 0 && password.length > 0) && styles.submitButtonActive]}
@@ -308,7 +350,7 @@ const Frame = ({ navigation }) => {
 
       <TouchableOpacity
         style={[styles.submitButton, phone.length === 10 && styles.submitButtonActive]}
-        onPress={confirmation ? confirmCode : handlePhoneLogin}
+        onPress={confirmation ? handleCodeVerification : handlePhoneLogin}
         disabled={
           (confirmation ? code.length !== 6 : phone.length !== 10) || 
           isLoading
@@ -634,6 +676,18 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  forgotPasswordButton: {
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+    padding: 5,
+  },
+  forgotPasswordText: {
+    color: Color.primary,
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 

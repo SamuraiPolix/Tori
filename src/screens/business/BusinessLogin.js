@@ -90,6 +90,32 @@ const BusinessLogin = ({ navigation }) => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('שגיאה', 'נא להזין כתובת אימייל');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await FirebaseApi.resetPassword(email);
+      Alert.alert('הודעה', 'נשלח אימייל עם קישור לאיפוס הסיסמה');
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      let errorMessage = 'אירעה שגיאה בשליחת האימייל';
+      
+      if (error.code === 'auth/invalid-email') {
+        errorMessage = 'כתובת האימייל אינה תקינה';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'משתמש לא קיים במערכת';
+      }
+      
+      Alert.alert('שגיאה', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView 
@@ -146,7 +172,11 @@ const BusinessLogin = ({ navigation }) => {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity
+              style={styles.forgotPasswordButton}
+              onPress={handleForgotPassword}
+              disabled={loading}
+            >
               <Text style={styles.forgotPasswordText}>שכחת סיסמה?</Text>
             </TouchableOpacity>
 
@@ -284,14 +314,16 @@ const styles = StyleSheet.create({
   showPasswordButton: {
     padding: 16,
   },
-  forgotPassword: {
-    alignItems: 'flex-end',
-    marginBottom: 24,
+  forgotPasswordButton: {
+    alignSelf: 'center',
+    marginTop: 10,
+    padding: 5,
   },
   forgotPasswordText: {
+    color: Color.primary,
+    fontFamily: FontFamily.regular,
     fontSize: 14,
-    fontFamily: FontFamily.primary,
-    color: '#2196F3',
+    textAlign: 'center',
   },
   loginButton: {
     backgroundColor: '#2196F3',
