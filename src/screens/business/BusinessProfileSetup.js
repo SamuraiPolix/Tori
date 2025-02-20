@@ -53,16 +53,23 @@ const BusinessProfileSetup = ({ navigation, route }) => {
         return;
       }
 
-      // Save profile data to Firestore
+      // Upload images to Firebase Storage and get download URLs
+      const imageUrls = await FirebaseApi.uploadBusinessImages(currentUser.uid, profileData.images);
+
+      // Save profile data to Firestore with image URLs
       await FirebaseApi.updateBusinessProfile(currentUser.uid, {
         about: profileData.about,
-        images: profileData.images,
+        images: imageUrls, // Save the download URLs instead of local URIs
         updatedAt: FirebaseApi.getServerTimestamp()
       });
 
       navigation.navigate('BusinessServicesSetup', {
         businessId: currentUser.uid,
-        businessData: { ...businessData, ...profileData }
+        businessData: { 
+          ...businessData, 
+          ...profileData,
+          images: imageUrls // Use the cloud storage URLs
+        }
       });
     } catch (error) {
       console.error('Error saving profile data:', error);
