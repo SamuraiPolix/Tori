@@ -108,7 +108,7 @@ const MyAppointments = ({ navigation, route }) => {
           id: appointment.id,
           ...appointment,
           businessName: businessData.name,
-          businessImage: businessData.image,
+          businessImage: (businessData.images ? businessData.images[0] : null),
           serviceName,
           servicePrice,
           serviceDuration,

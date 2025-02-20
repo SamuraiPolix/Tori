@@ -1,6 +1,7 @@
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
+import storage from '@react-native-firebase/storage';
 
 class FirebaseApi {
   // Auth methods
@@ -460,6 +461,7 @@ class FirebaseApi {
   }
 
   static async getTopBusinesses(categoryId, limit = 10) {
+    console.log('Getting top businesses for category:', categoryId, 'limit:', limit);
     const snapshot = await firestore()
       .collection('businesses')
       .where('categories', 'array-contains', categoryId)
@@ -689,6 +691,7 @@ class FirebaseApi {
   }
 
   static async signInWithPhone(phoneNumber) {
+    console.log('Signing in with phone:', phoneNumber);
     const formattedPhoneNumber = phoneNumber.startsWith('0') 
       ? `+972${phoneNumber.substring(1)}` 
       : phoneNumber;
@@ -696,27 +699,407 @@ class FirebaseApi {
   }
 
   static async confirmPhoneCode(confirmation, code) {
-    return await confirmation.confirm(code);
+    console.log('Confirming phone code');
+    const credential = await confirmation.confirm(code);
+    console.log('Phone code confirmed, user:', credential.user);
+    return credential;
   }
 
-  static async createNewUser(userData) {
-    const userDocRef = firestore().collection('users').doc(userData.uid);
-    await userDocRef.set({
-      ...userData,
+  static async createUserAfterPhoneAuth(name) {
+    console.log('Creating user after phone auth');
+    const currentUser = this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No authenticated user found');
+    }
+
+    const userData = {
+      uid: currentUser.uid,
+      name: name.trim(),
+      phoneNumber: currentUser.phoneNumber,
+      email: currentUser.email || null,
       createdAt: this.getServerTimestamp(),
       updatedAt: this.getServerTimestamp(),
       lastLogin: this.getServerTimestamp()
+    };
+
+    console.log('Creating user data:', userData);
+    await this.createUserData(currentUser.uid, userData);
+    
+    await currentUser.updateProfile({
+      displayName: name.trim()
     });
+
+    return { user: currentUser, userData };
   }
 
-  static async updateUserProfile(userId, data) {
-    const user = auth().currentUser;
+  static async signInWithPhone(phoneNumber) {
+    console.log('Signing in with phone:', phoneNumber);
+    const formattedPhoneNumber = phoneNumber.startsWith('0') 
+      ? `+972${phoneNumber.substring(1)}` 
+      : phoneNumber;
+    return await auth().signInWithPhoneNumber(formattedPhoneNumber);
+  }
+
+  static async confirmPhoneCode(confirmation, code) {
+    console.log('Confirming phone code');
+    const credential = await confirmation.confirm(code);
+    console.log('Phone code confirmed, user:', credential.user);
+    return credential;
+  }
+
+  static async createUserAfterPhoneAuth(name) {
+    console.log('Creating user after phone auth');
+    const currentUser = this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No authenticated user found');
+    }
+
+    const userData = {
+      uid: currentUser.uid,
+      name: name.trim(),
+      phoneNumber: currentUser.phoneNumber,
+      email: currentUser.email || null,
+      createdAt: this.getServerTimestamp(),
+      updatedAt: this.getServerTimestamp(),
+      lastLogin: this.getServerTimestamp()
+    };
+
+    console.log('Creating user data:', userData);
+    await this.createUserData(currentUser.uid, userData);
+    
+    await currentUser.updateProfile({
+      displayName: name.trim()
+    });
+
+    return { user: currentUser, userData };
+  }
+
+  static async newUserWithEmailAndPassword(email, password) {
+    const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+    return userCredential.user;
+  }
+
+  static async signInWithEmailAndPassword(email, password) {
+    const userCredential = await auth().signInWithEmailAndPassword(email, password);
+    return userCredential.user;
+  }
+
+  static async signOut() {
+    await auth().signOut();
+  }
+
+  static getCurrentUser() {
+    return auth().currentUser;
+  }
+
+  static async createBusinessProfile(businessId, businessData) {
+    await firestore()
+      .collection('businesses')
+      .doc(businessId)
+      .set(businessData);
+
+    const user = this.getCurrentUser();
     if (user) {
-      await user.updateProfile(data);
-      await this.updateUserData(userId, {
-        ...data,
-        updatedAt: this.getServerTimestamp()
+      await user.updateProfile({
+        displayName: businessData.name
       });
+    }
+  }
+
+  static async getUserAppointments(userId) {
+    try {
+      const appointmentsSnapshot = await firestore()
+        .collection('appointments')
+        .where('customerId', '==', userId)
+        .get();
+
+      return appointmentsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting user appointments:', error);
+      throw error;
+    }
+  }
+
+  static async getAppointmentsWithFullData(businessId) {
+    try {
+      const appointmentsSnapshot = await firestore()
+        .collection('appointments')
+        .where('businessId', '==', businessId)
+        .get();
+
+      if (appointmentsSnapshot.empty) {
+        return [];
+      }
+
+      const appointments = [];
+      
+      for (const doc of appointmentsSnapshot.docs) {
+        const appointment = {
+          id: doc.id,
+          ...doc.data()
+        };
+
+        // Get customer data if not denormalized
+        if (!appointment.customerName) {
+          try {
+            const customerDoc = await firestore()
+              .collection('users')
+              .doc(appointment.customerId)
+              .get();
+            
+            if (customerDoc.exists) {
+              const customerData = customerDoc.data();
+              appointment.customerName = customerData.name;
+              appointment.customerPhone = customerData.phone || customerData.phoneNumber;
+            }
+          } catch (error) {
+            console.error('Error fetching customer data:', error);
+          }
+        }
+
+        // Get service data if not denormalized
+        if (!appointment.serviceName) {
+          try {
+            const serviceDoc = await firestore()
+              .collection('services')
+              .doc(appointment.serviceId)
+              .get();
+            
+            if (serviceDoc.exists) {
+              const serviceData = serviceDoc.data();
+              appointment.serviceName = serviceData.name;
+              appointment.servicePrice = serviceData.price;
+              appointment.serviceDuration = serviceData.duration;
+            }
+          } catch (error) {
+            console.error('Error fetching service data:', error);
+          }
+        }
+
+        // Add formatted date and time
+        if (appointment.startTime) {
+          const date = appointment.startTime.toDate();
+          appointment.formattedDate = date.toLocaleDateString('he-IL');
+          appointment.time = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        appointments.push(appointment);
+      }
+
+      return appointments;
+    } catch (error) {
+      console.error('Error in getAppointmentsWithFullData:', error);
+      throw error;
+    }
+  }
+
+  static async cancelAppointment(appointmentId) {
+    try {
+      // Get the appointment data
+      const appointmentDoc = await firestore()
+        .collection('appointments')
+        .doc(appointmentId)
+        .get();
+
+      if (!appointmentDoc.exists) {
+        throw new Error('התור לא נמצא');
+      }
+
+      const appointmentData = appointmentDoc.data();
+      
+      // Get the business settings
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(appointmentData.businessId)
+        .get();
+
+      if (!businessDoc.exists) {
+        throw new Error('העסק לא נמצא');
+      }
+
+      const businessData = businessDoc.data();
+      const { scheduleSettings } = businessData;
+
+      // Check if cancellation is allowed by business settings
+      if (!scheduleSettings.allowCancellation) {
+        throw new Error('ביטול תורים אינו מורשה. אנא צור קשר עם העסק.');
+      }
+
+      // Check cancellation time limit
+      const appointmentTime = appointmentData.startTime.toDate();
+      const now = new Date();
+      const hoursUntilAppointment = (appointmentTime - now) / (1000 * 60 * 60);
+
+      if (hoursUntilAppointment < scheduleSettings.cancellationTimeLimit) {
+        throw new Error(`לא ניתן לבטל תור פחות מ-${scheduleSettings.cancellationTimeLimit} שעות לפני מועד התור`);
+      }
+
+      // Update appointment status to canceled
+      await firestore()
+        .collection('appointments')
+        .doc(appointmentId)
+        .update({
+          status: 'canceled',
+          canceledAt: firestore.FieldValue.serverTimestamp(),
+          lastUpdated: firestore.FieldValue.serverTimestamp()
+        });
+
+      return true;
+    } catch (error) {
+      console.error('Error in cancelAppointment:', error);
+      throw error;
+    }
+  }
+
+  // Review methods
+  static async getBusinessReviews(businessId) {
+    try {
+      const snapshot = await firestore()
+        .collection('reviews')
+        .where('businessId', '==', businessId)
+        .orderBy('createdAt', 'desc')
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting business reviews:', error);
+      throw error;
+    }
+  }
+
+  static async hasUserReviewedBusiness(userId, businessId) {
+    try {
+      const snapshot = await firestore()
+        .collection('reviews')
+        .where('userId', '==', userId)
+        .where('businessId', '==', businessId)
+        .get();
+
+      return !snapshot.empty;
+    } catch (error) {
+      console.error('Error checking user review:', error);
+      throw error;
+    }
+  }
+
+  static async hasUserApprovedAppointment(userId, businessId) {
+    try {
+      const snapshot = await firestore()
+        .collection('appointments')
+        .where('customerId', '==', userId)
+        .where('businessId', '==', businessId)
+        .where('status', '==', 'approved')
+        .get();
+
+      return !snapshot.empty;
+    } catch (error) {
+      console.error('Error checking user appointments:', error);
+      throw error;
+    }
+  }
+
+  static async createReview(businessId, userId, userName, stars, review) {
+    try {
+      const reviewData = {
+        businessId,
+        userId,
+        userName,
+        stars,
+        review,
+        createdAt: this.getServerTimestamp()
+      };
+
+      const reviewRef = await firestore()
+        .collection('reviews')
+        .add(reviewData);
+
+      // Update business rating
+      const reviews = await this.getBusinessReviews(businessId);
+      const totalStars = reviews.reduce((sum, review) => sum + review.stars, 0);
+      const averageRating = totalStars / reviews.length;
+
+      await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .update({
+          rating: averageRating,
+          reviewsCount: reviews.length
+        });
+
+      return reviewRef.id;
+    } catch (error) {
+      console.error('Error creating review:', error);
+      throw error;
+    }
+  }
+
+  // Image handling methods
+  static async uploadImage(uri, path) {
+    try {
+      // Convert image to base64 first
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // Convert blob to base64
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const base64data = reader.result.split(',')[1];
+            
+            // Create reference to the storage path
+            const storageRef = storage().ref(path);
+            
+            // Upload base64 data
+            const task = storageRef.putString(base64data, 'base64');
+            
+            // Monitor upload progress if needed
+            task.on('state_changed', 
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log(`Upload is ${progress}% complete`);
+              },
+              (error) => {
+                reject(error);
+              },
+              async () => {
+                try {
+                  // Get download URL after upload completes
+                  const downloadURL = await storageRef.getDownloadURL();
+                  resolve(downloadURL);
+                } catch (error) {
+                  reject(error);
+                }
+              }
+            );
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async uploadBusinessImages(userId, images) {
+    try {
+      const uploadPromises = images.map((uri, index) => {
+        const path = `businesses/${userId}/images/image_${Date.now()}_${index}.jpg`;
+        return this.uploadImage(uri, path);
+      });
+
+      return await Promise.all(uploadPromises);
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -1438,6 +1821,90 @@ class FirebaseApi {
       console.error('Error creating review:', error);
       throw error;
     }
+  }
+
+  // Image handling methods
+  static async uploadImage(uri, path) {
+    try {
+      // Convert image to base64 first
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      // Convert blob to base64
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const base64data = reader.result.split(',')[1];
+            
+            // Create reference to the storage path
+            const storageRef = storage().ref(path);
+            
+            // Upload base64 data
+            const task = storageRef.putString(base64data, 'base64');
+            
+            // Monitor upload progress if needed
+            task.on('state_changed', 
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log(`Upload is ${progress}% complete`);
+              },
+              (error) => {
+                reject(error);
+              },
+              async () => {
+                try {
+                  // Get download URL after upload completes
+                  const downloadURL = await storageRef.getDownloadURL();
+                  resolve(downloadURL);
+                } catch (error) {
+                  reject(error);
+                }
+              }
+            );
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async uploadBusinessImages(userId, images) {
+    try {
+      const uploadPromises = images.map((uri, index) => {
+        const path = `businesses/${userId}/images/image_${Date.now()}_${index}.jpg`;
+        return this.uploadImage(uri, path);
+      });
+
+      return await Promise.all(uploadPromises);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async handlePhoneAuthentication() {
+    console.log('Handling phone authentication');
+    const currentUser = this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No authenticated user found');
+    }
+
+    // Try to get existing user data
+    const userData = await this.getUserData(currentUser.uid);
+    if (userData) {
+      console.log('Existing user found:', userData);
+      // Update last login
+      await this.updateLastLogin(currentUser.uid);
+      return { user: currentUser, userData, isExisting: true };
+    }
+
+    console.log('No existing user found, needs to create new user');
+    return { user: currentUser, isExisting: false };
   }
 }
 
