@@ -1354,6 +1354,91 @@ class FirebaseApi {
       throw error;
     }
   }
+
+  // Review methods
+  static async getBusinessReviews(businessId) {
+    try {
+      const snapshot = await firestore()
+        .collection('reviews')
+        .where('businessId', '==', businessId)
+        .orderBy('createdAt', 'desc')
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting business reviews:', error);
+      throw error;
+    }
+  }
+
+  static async hasUserReviewedBusiness(userId, businessId) {
+    try {
+      const snapshot = await firestore()
+        .collection('reviews')
+        .where('userId', '==', userId)
+        .where('businessId', '==', businessId)
+        .get();
+
+      return !snapshot.empty;
+    } catch (error) {
+      console.error('Error checking user review:', error);
+      throw error;
+    }
+  }
+
+  static async hasUserApprovedAppointment(userId, businessId) {
+    try {
+      const snapshot = await firestore()
+        .collection('appointments')
+        .where('customerId', '==', userId)
+        .where('businessId', '==', businessId)
+        .where('status', '==', 'approved')
+        .get();
+
+      return !snapshot.empty;
+    } catch (error) {
+      console.error('Error checking user appointments:', error);
+      throw error;
+    }
+  }
+
+  static async createReview(businessId, userId, userName, stars, review) {
+    try {
+      const reviewData = {
+        businessId,
+        userId,
+        userName,
+        stars,
+        review,
+        createdAt: this.getServerTimestamp()
+      };
+
+      const reviewRef = await firestore()
+        .collection('reviews')
+        .add(reviewData);
+
+      // Update business rating
+      const reviews = await this.getBusinessReviews(businessId);
+      const totalStars = reviews.reduce((sum, review) => sum + review.stars, 0);
+      const averageRating = totalStars / reviews.length;
+
+      await firestore()
+        .collection('businesses')
+        .doc(businessId)
+        .update({
+          rating: averageRating,
+          reviewsCount: reviews.length
+        });
+
+      return reviewRef.id;
+    } catch (error) {
+      console.error('Error creating review:', error);
+      throw error;
+    }
+  }
 }
 
 export default FirebaseApi;

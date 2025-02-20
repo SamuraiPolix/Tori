@@ -13,7 +13,14 @@ const SalonsList = forwardRef(({ onSalonPress, onSeeAllPress }, ref) => {
 
   // Expose fetchSalons to parent through ref
   useImperativeHandle(ref, () => ({
-    fetchSalons
+    fetchSalons,
+    updateBusiness: (updatedBusiness) => {
+      setSalons(prevSalons => 
+        prevSalons.map(salon => 
+          salon.id === updatedBusiness.id ? updatedBusiness : salon
+        )
+      );
+    }
   }));
 
   const fetchSalons = async () => {

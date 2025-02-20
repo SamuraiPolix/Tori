@@ -14,7 +14,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  TextInput
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontFamily, Color, FontSize, Border, Padding } from "../../styles/GlobalStyles";
@@ -46,6 +47,10 @@ const SalonDetails = ({ route }) => {
   const [notes, setNotes] = React.useState(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [businessData, setBusinessData] = React.useState(route.params.business);
+  const [reviews, setReviews] = React.useState([]);
+  const [showReviewModal, setShowReviewModal] = React.useState(false);
+  const [reviewText, setReviewText] = React.useState('');
+  const [rating, setRating] = React.useState(5);
 
   // Function to refresh business data
   const onRefresh = React.useCallback(async () => {
@@ -840,15 +845,26 @@ const SalonDetails = ({ route }) => {
       case 'reviews':
         return (
           <View style={styles.reviewsContainer}>
-            {[1,2,3].map((item) => (
-              <View key={item} style={styles.reviewItem}>
-                <View style={styles.reviewHeader}>
-                  <Text style={styles.reviewerName}>לקוח מרוצה</Text>
-                  <Text style={styles.reviewRating}>⭐ 5.0</Text>
+            <TouchableOpacity
+              style={styles.addReviewButton}
+              onPress={() => handleAddReview()}
+            >
+              <Text style={styles.addReviewButtonText}>מה דעתך על בית העסק?</Text>
+            </TouchableOpacity>
+
+            {reviews.length > 0 ? (
+              reviews.map((review) => (
+                <View key={review.id} style={styles.reviewItem}>
+                  <View style={styles.reviewHeader}>
+                    <Text style={styles.reviewerName}>{review.userName}</Text>
+                    <Text style={styles.reviewRating}>{'⭐'.repeat(review.stars)}</Text>
+                  </View>
+                  <Text style={styles.reviewText}>{review.review}</Text>
                 </View>
-                <Text style={styles.reviewText}>שירות מעולה! תספורת מדהימה ויחס אישי</Text>
-              </View>
-            ))}
+              ))
+            ) : (
+              <Text style={styles.emptyText}>אין חוות דעת עדיין</Text>
+            )}
           </View>
         );
     }
@@ -864,6 +880,142 @@ const SalonDetails = ({ route }) => {
           <Ionicons name="arrow-back" size={24} color={Color.textColorPrimary} />
         </TouchableOpacity>
       </View>
+    );
+  };
+
+  React.useEffect(() => {
+    if (activeTab === 'reviews') {
+      loadReviews();
+    }
+  }, [activeTab]);
+
+  const loadReviews = async () => {
+    try {
+      const reviews = await FirebaseApi.getBusinessReviews(businessData.id);
+      setReviews(reviews);
+    } catch (error) {
+      console.error('Error loading reviews:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בטעינת חוות הדעת');
+    }
+  };
+
+  const handleAddReview = async () => {
+    try {
+      const user = FirebaseApi.getCurrentUser();
+      if (!user) {
+        Alert.alert('שגיאה', 'יש להתחבר כדי להוסיף חוות דעת');
+        return;
+      }
+
+      // Check if user has an approved appointment
+      const hasApprovedAppointment = await FirebaseApi.hasUserApprovedAppointment(user.uid, businessData.id);
+      if (!hasApprovedAppointment) {
+        Alert.alert('שגיאה', 'ניתן להוסיף חוות דעת רק לאחר ביקור בעסק');
+        return;
+      }
+
+      // Check if user already reviewed
+      const hasReviewed = await FirebaseApi.hasUserReviewedBusiness(user.uid, businessData.id);
+      if (hasReviewed) {
+        Alert.alert('שגיאה', 'כבר כתבת חוות דעת לעסק זה');
+        return;
+      }
+
+      setShowReviewModal(true);
+    } catch (error) {
+      console.error('Error checking review eligibility:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בבדיקת זכאות לכתיבת חוות דעת');
+    }
+  };
+
+  const handleSubmitReview = async () => {
+    try {
+      const user = FirebaseApi.getCurrentUser();
+      if (!user) return;
+
+      await FirebaseApi.createReview(
+        businessData.id,
+        user.uid,
+        user.displayName,
+        rating,
+        reviewText
+      );
+
+      // Fetch updated business data
+      const updatedBusinessData = await FirebaseApi.getBusinessData(businessData.id);
+      setBusinessData(updatedBusinessData);
+
+      // If navigation params has an onUpdate callback, call it with updated data
+      if (route.params?.onUpdate) {
+        route.params.onUpdate(updatedBusinessData);
+      }
+
+      setShowReviewModal(false);
+      setReviewText('');
+      setRating(5);
+      loadReviews();
+      Alert.alert('תודה', 'חוות הדעת נשמרה בהצלחה');
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      Alert.alert('שגיאה', 'אירעה שגיאה בשמירת חוות הדעת');
+    }
+  };
+
+  const renderReviewModal = () => {
+    return (
+      <Modal
+        visible={showReviewModal}
+        transparent={true}
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>כתיבת חוות דעת</Text>
+            
+            <View style={styles.ratingContainer}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setRating(star)}
+                  style={styles.starButton}
+                >
+                  <Text style={[
+                    styles.starText,
+                    star <= rating && styles.selectedStar
+                  ]}>
+                    ⭐
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={styles.reviewInput}
+              placeholder="כתוב את חוות דעתך כאן..."
+              multiline
+              numberOfLines={4}
+              value={reviewText}
+              onChangeText={setReviewText}
+              textAlign="right"
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={handleSubmitReview}
+              >
+                <Text style={styles.confirmButtonText}>שלח</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowReviewModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     );
   };
 
@@ -945,6 +1097,7 @@ const SalonDetails = ({ route }) => {
       {renderBookButton()}
       {renderConfirmModal()}
       {renderImageModal()}
+      {renderReviewModal()}
     </View>
   );
 };
@@ -1165,29 +1318,76 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   reviewsContainer: {
-    gap: 16,
-  },
-  reviewItem: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
     padding: 16,
   },
+  reviewItem: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   reviewHeader: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
   reviewerName: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: FontSize.size_base,
+    fontWeight: '600',
+    color: Color.textColorPrimary,
   },
   reviewRating: {
-    fontSize: 16,
+    fontSize: FontSize.size_sm,
+    color: Color.textColorSecondary,
   },
   reviewText: {
-    fontSize: 14,
-    color: '#666666',
+    fontSize: FontSize.size_sm,
+    color: Color.textColorPrimary,
     textAlign: 'right',
+  },
+  addReviewButton: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  addReviewButtonText: {
+    color: '#fff',
+    fontSize: FontSize.size_base,
+    fontWeight: '600',
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginVertical: 16,
+  },
+  starButton: {
+    padding: 4,
+  },
+  starText: {
+    fontSize: 24,
+    opacity: 0.3,
+  },
+  selectedStar: {
+    opacity: 1,
+  },
+  reviewInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 16,
   },
   dateContainer: {
     marginTop: 20,
