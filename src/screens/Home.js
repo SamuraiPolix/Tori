@@ -128,8 +128,13 @@ const HomeScreen = ({ navigation }) => {
   };
 
   // Navigation Handlers
-  const handleCategoryPress = (category) => {
-    navigation.navigate('CategoryDetails', { category });
+  const handleCategoryPress = async (category) => {
+    const businesses = await FirebaseApi.getBusinessesByCategory(category.id);
+    navigation.navigate('FullList', {
+      title: category.title,
+      data: businesses,
+      type: 'salon'
+    });
   };
 
   const handleBusinessPress = (business) => {
@@ -157,7 +162,6 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleSearchResults = (businesses, title) => {
-    // Navigate to the list screen with the search results
     navigation.navigate('FullList', {
       title: title,
       data: businesses,

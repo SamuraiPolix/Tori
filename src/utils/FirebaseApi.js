@@ -1927,6 +1927,29 @@ class FirebaseApi {
       return [];
     }
   }
+
+  static async searchBusinesses(searchText) {
+    try {
+      // Get all businesses first (in a real app, we'd use a proper search index)
+      const snapshot = await firestore()
+        .collection('businesses')
+        .get();
+
+      const businesses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Filter businesses that match the search text
+      return businesses.filter(business => 
+        business.name.toLowerCase().includes(searchText.toLowerCase()) ||
+        business.description?.toLowerCase().includes(searchText.toLowerCase())
+      );
+    } catch (error) {
+      console.error('Error searching businesses:', error);
+      return [];
+    }
+  }
 }
 
 export default FirebaseApi;
