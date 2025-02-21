@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   I18nManager,
   ScrollView,
-  Pressable
+  Pressable,
+  TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -24,7 +25,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
   }, []);
 
   const formatRating = useCallback((value) => {
-    return `${value.toFixed(1)} כוכבים`;
+    return `${Math.round(value)} כוכבים`;
   }, []);
 
   const formatPrice = useCallback((value) => {
@@ -47,9 +48,30 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
   // State for category dropdown
   const [showCategories, setShowCategories] = useState(false);
 
+  // Handle numeric input changes
+  const handleNumericInput = useCallback((key, value) => {
+    const numValue = parseInt(value) || 0;
+    let finalValue = numValue;
+
+    // Validation rules
+    switch(key) {
+      case 'rating':
+        finalValue = Math.min(Math.max(Math.round(numValue), 1), 5);
+        break;
+      case 'maxPrice':
+      case 'distance':
+        finalValue = Math.max(numValue, 0);
+        break;
+    }
+
+    setLocalFilters(prev => ({ ...prev, [key]: finalValue }));
+    setFilters(prev => ({ ...prev, [key]: finalValue }));
+  }, [setFilters]);
+
   // Update parent state only when slider ends
   const handleSliderComplete = useCallback((key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    const finalValue = key === 'rating' ? Math.round(value) : value;
+    setFilters(prev => ({ ...prev, [key]: finalValue }));
   }, [setFilters]);
 
   // יצירת מערך של 7 ימים קדימה
@@ -100,14 +122,17 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
             <View style={styles.filterSection}>
               <View style={styles.filterTitleContainer}>
                 <Text style={styles.filterTitle}>
-                  <Ionicons name="grid" size={20} color="#666" /> קטגוריה
+                  <Ionicons name="sparkles" size={20} color={Color.primaryColorAmaranthPurple} /> קטגוריה
                 </Text>
                 <Text style={styles.filterValue}>
                   {CATEGORIES.find(cat => cat.id === localFilters.categoryId)?.title || 'הכל'}
                 </Text>
               </View>
               <Pressable
-                style={styles.categorySelector}
+                style={[
+                  styles.categorySelector,
+                  showCategories && styles.categorySelectorActive
+                ]}
                 onPress={() => setShowCategories(!showCategories)}
               >
                 <Text style={styles.categoryText}>
@@ -116,7 +141,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
                 <Ionicons 
                   name={showCategories ? "chevron-up" : "chevron-down"} 
                   size={24} 
-                  color="#666" 
+                  color={Color.primaryColorAmaranthPurple}
                 />
               </Pressable>
               {showCategories && (
@@ -140,6 +165,9 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
                       ]}>
                         {category.title}
                       </Text>
+                      {localFilters.categoryId === category.id && (
+                        <Ionicons name="checkmark" size={20} color={Color.primaryColorAmaranthPurple} />
+                      )}
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -149,85 +177,86 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
             {/* Distance Filter */}
             <View style={styles.filterSection}>
               <View style={styles.filterTitleContainer}>
-                <Text style={styles.filterTitle}>
-                  <Ionicons name="location" size={20} color="#666" /> מרחק
-                </Text>
-                <Text style={styles.filterValue}>
-                  {formatDistance(localFilters.distance)} 🚗
-                </Text>
+                <Text style={styles.filterTitle}>מרחק</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.numericInput}
+                    value={String(localFilters.distance)}
+                    onChangeText={(value) => handleNumericInput('distance', value)}
+                    keyboardType="numeric"
+                    maxLength={3}
+                  />
+                  <Text style={styles.unitText}>ק"מ</Text>
+                </View>
               </View>
-              <View style={styles.sliderContainer}>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={1}
-                  maximumValue={120}
-                  step={1}
-                  value={localFilters.distance}
-                  onValueChange={(value) =>
-                    setLocalFilters(prev => ({ ...prev, distance: value }))
-                  }
-                  onSlidingComplete={(value) => handleSliderComplete('distance', value)}
-                  minimumTrackTintColor={Color.primaryColorAmaranthPurple}
-                  maximumTrackTintColor="#DDD"
-                  thumbTintColor={Color.primaryColorAmaranthPurple}
-                />
-              </View>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={50}
+                value={localFilters.distance}
+                onValueChange={(value) => setLocalFilters(prev => ({ ...prev, distance: Math.round(value) }))}
+                onSlidingComplete={(value) => handleSliderComplete('distance', Math.round(value))}
+                minimumTrackTintColor={Color.primaryColorAmaranthPurple}
+                maximumTrackTintColor="#D3D3D3"
+                thumbTintColor={Color.primaryColorAmaranthPurple}
+              />
             </View>
 
             {/* Rating Filter */}
             <View style={styles.filterSection}>
               <View style={styles.filterTitleContainer}>
-                <Text style={styles.filterTitle}>
-                  <Ionicons name="star" size={20} color="#666" /> דירוג
-                </Text>
-                <Text style={styles.filterValue}>
-                  {formatRating(localFilters.rating)} ⭐
-                </Text>
+                <Text style={styles.filterTitle}>דירוג</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.numericInput}
+                    value={String(localFilters.rating)}
+                    onChangeText={(value) => handleNumericInput('rating', value)}
+                    keyboardType="numeric"
+                    maxLength={1}
+                  />
+                  <Text style={styles.unitText}>כוכבים</Text>
+                </View>
               </View>
-              <View style={styles.sliderContainer}>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={1}
-                  maximumValue={5}
-                  step={0.5}
-                  value={localFilters.rating}
-                  onValueChange={(value) =>
-                    setLocalFilters(prev => ({ ...prev, rating: value }))
-                  }
-                  onSlidingComplete={(value) => handleSliderComplete('rating', value)}
-                  minimumTrackTintColor={Color.primaryColorAmaranthPurple}
-                  maximumTrackTintColor="#DDD"
-                  thumbTintColor={Color.primaryColorAmaranthPurple}
-                />
-              </View>
+              <Slider
+                style={styles.slider}
+                minimumValue={1}
+                maximumValue={5}
+                step={1}
+                value={localFilters.rating}
+                onValueChange={(value) => setLocalFilters(prev => ({ ...prev, rating: Math.round(value) }))}
+                onSlidingComplete={(value) => handleSliderComplete('rating', Math.round(value))}
+                minimumTrackTintColor={Color.primaryColorAmaranthPurple}
+                maximumTrackTintColor="#D3D3D3"
+                thumbTintColor={Color.primaryColorAmaranthPurple}
+              />
             </View>
 
             {/* Price Filter */}
             <View style={styles.filterSection}>
               <View style={styles.filterTitleContainer}>
-                <Text style={styles.filterTitle}>
-                  <Ionicons name="cash" size={20} color="#666" /> מחיר מקסימלי
-                </Text>
-                <Text style={styles.filterValue}>
-                  {formatPrice(localFilters.maxPrice)} 💰
-                </Text>
+                <Text style={styles.filterTitle}>מחיר מקסימלי</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.numericInput}
+                    value={String(localFilters.maxPrice)}
+                    onChangeText={(value) => handleNumericInput('maxPrice', value)}
+                    keyboardType="numeric"
+                    maxLength={4}
+                  />
+                  <Text style={styles.unitText}>₪</Text>
+                </View>
               </View>
-              <View style={styles.sliderContainer}>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={50}
-                  maximumValue={1000}
-                  step={50}
-                  value={localFilters.maxPrice}
-                  onValueChange={(value) =>
-                    setLocalFilters(prev => ({ ...prev, maxPrice: value }))
-                  }
-                  onSlidingComplete={(value) => handleSliderComplete('maxPrice', value)}
-                  minimumTrackTintColor={Color.primaryColorAmaranthPurple}
-                  maximumTrackTintColor="#DDD"
-                  thumbTintColor={Color.primaryColorAmaranthPurple}
-                />
-              </View>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={1000}
+                value={localFilters.maxPrice}
+                onValueChange={(value) => setLocalFilters(prev => ({ ...prev, maxPrice: Math.round(value) }))}
+                onSlidingComplete={(value) => handleSliderComplete('maxPrice', Math.round(value))}
+                minimumTrackTintColor={Color.primaryColorAmaranthPurple}
+                maximumTrackTintColor="#D3D3D3"
+                thumbTintColor={Color.primaryColorAmaranthPurple}
+              />
             </View>
 
             {/* Day Filter */}
@@ -459,41 +488,88 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
     padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  categoryText: {
-    fontFamily: FontFamily.regular,
-    fontSize: 16,
-    color: '#334155',
-  },
-  categoriesList: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: 'rgba(158, 42, 155, 0.2)',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  categoryItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+  categorySelectorActive: {
+    borderColor: Color.primaryColorAmaranthPurple,
+    backgroundColor: 'rgba(158, 42, 155, 0.05)',
   },
-  selectedCategoryItem: {
-    backgroundColor: Color.primaryColorAmaranthPurple + '10',
-  },
-  categoryItemText: {
+  categoryText: {
+    color: Color.primaryColorAmaranthPurple,
     fontFamily: FontFamily.regular,
     fontSize: 16,
-    color: '#334155',
-    textAlign: 'right',
+  },
+  categoriesList: {
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(158, 42, 155, 0.2)',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    maxHeight: 200,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(158, 42, 155, 0.1)',
+  },
+  selectedCategoryItem: {
+    backgroundColor: 'rgba(158, 42, 155, 0.05)',
+  },
+  categoryItemText: {
+    color: '#666',
+    fontFamily: FontFamily.regular,
+    fontSize: 16,
   },
   selectedCategoryItemText: {
     color: Color.primaryColorAmaranthPurple,
     fontFamily: FontFamily.medium,
-  }
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  numericInput: {
+    width: 50,
+    height: 30,
+    borderWidth: 1,
+    borderColor: Color.primaryColorAmaranthPurple,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    marginRight: 5,
+    textAlign: 'center',
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.regular,
+  },
+  unitText: {
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+  },
 });
 
 export default FilterModal;
