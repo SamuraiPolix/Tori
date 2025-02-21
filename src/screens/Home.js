@@ -134,12 +134,24 @@ const HomeScreen = ({ navigation }) => {
 
   // Navigation Handlers
   const handleCategoryPress = async (category) => {
-    const businesses = await FirebaseApi.getBusinessesByCategory(category.id);
-    navigation.navigate('FullList', {
-      title: category.title,
-      data: businesses,
-      type: 'salon'
-    });
+    try {
+      console.log('Selected category:', category);
+      const categoryId = category.categoryId || category.id;
+      const businesses = await FirebaseApi.getBusinessesByCategory(categoryId);
+      console.log(`Found ${businesses?.length || 0} businesses for category ${categoryId}`);
+      navigation.navigate('FullList', {
+        title: category.title || category.name,
+        data: businesses,
+        type: 'salon'
+      });
+    } catch (error) {
+      console.error('Error getting businesses by category:', error);
+      Alert.alert(
+        'שגיאה',
+        'אירעה שגיאה בטעינת העסקים. אנא נסה שוב.',
+        [{ text: 'אישור' }]
+      );
+    }
   };
 
   const handleBusinessPress = (business) => {
