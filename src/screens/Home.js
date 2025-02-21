@@ -17,6 +17,7 @@ import {
 import { Image } from "expo-image";
 import { FontFamily, Color } from "../styles/GlobalStyles";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from 'expo-location';
 
 // Import Components
 import CategoriesList from '../components/categories/CategoriesList';
@@ -26,6 +27,7 @@ import NearbySalonsList from '../components/salons/NearbySalonsList';
 import BottomNavigation from '../components/common/BottomNavigation';
 import SalonDetails from '../components/salons/SalonDetails';
 import FilterModal from '../components/filters/FilterModal';
+import { Alert } from 'react-native';
 
 // Import Data
 import { NEARBY_SALONS, SALONS } from '../components/salons/salonsData';
@@ -58,11 +60,14 @@ const HomeScreen = ({ navigation }) => {
   const [userName, setUserName] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
   const [filters, setFilters] = React.useState({
-    distance: 5,
-    rating: 4,
-    price: 2,
+    distance: 30,
+    rating: 3,
+    maxPrice: 200,
     availability: false,
+    selectedDay: undefined,
+    categoryId: undefined
   });
+  const [filteredSalons, setFilteredSalons] = React.useState([]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -183,6 +188,107 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  const getDistance = (loc1, loc2) => {
+    const lat1 = loc1.latitude;
+    const lon1 = loc1.longitude;
+    const lat2 = loc2.latitude;
+    const lon2 = loc2.longitude;
+
+    const R = 6371; // Radius of the earth in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c; // Distance in kilometers
+    return d * 1000; // Convert to meters
+  };
+
+  const handleApplyFilters = async (newFilters) => {
+    console.log('Applying new filters:', newFilters);
+    setFilters(newFilters);
+    
+    try {
+      // Get filtered results from both lists
+      let allFilteredSalons = [];
+      
+      // Get businesses filtered by category if selected
+      const businesses = await FirebaseApi.getBusinessesByCategory(newFilters.categoryId);
+      console.log(`Found ${businesses?.length || 0} total businesses`);
+
+      if (businesses) {
+        const filteredBusinesses = businesses.filter(business => {
+          // Rating filter
+          if (business.rating < newFilters.rating) {
+            console.log(`Business ${business.name} filtered out by rating: ${business.rating} < ${newFilters.rating}`);
+            return false;
+          }
+
+          // Price filter
+          console.log(`Checking price for ${business.name}:`);
+          console.log('Services:', business.services);
+          
+          if (business.services && business.services.length > 0) {
+            // Check if any service has price below or equal to the filter value
+            const hasServiceInPriceRange = business.services.some(service => {
+              console.log(`Service: ${service.name}, Price: ${service.price}`);
+              return service.price <= newFilters.maxPrice;
+            });
+            
+            if (!hasServiceInPriceRange) {
+              console.log(`Business ${business.name} filtered out by price: no services found under ${newFilters.maxPrice}₪`);
+              return false;
+            } else {
+              console.log(`Business ${business.name} has services under ${newFilters.maxPrice}₪`);
+            }
+          } else {
+            console.log('No services found');
+            return false;
+          }
+
+          // Availability filter
+          if (newFilters.availability && !business.isAvailableToday) {
+            console.log(`Business ${business.name} filtered out by availability`);
+            return false;
+          }
+
+          // Selected day filter
+          if (newFilters.selectedDay !== undefined) {
+            const hasAvailabilityForDay = business.availability?.[newFilters.selectedDay]?.some(slot => !slot.isBooked);
+            if (!hasAvailabilityForDay) {
+              console.log(`Business ${business.name} filtered out by selected day: ${newFilters.selectedDay}`);
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        console.log(`Found ${filteredBusinesses.length} businesses after filtering`);
+        allFilteredSalons = filteredBusinesses;
+      }
+
+      // Close the filter modal
+      setShowFilters(false);
+
+      // Navigate to the filtered results screen
+      navigation.navigate('FullList', {
+        title: 'תוצאות חיפוש',
+        data: allFilteredSalons,
+        type: 'salon',
+        filters: newFilters
+      });
+    } catch (error) {
+      console.error('Error applying filters:', error);
+      Alert.alert(
+        'שגיאה',
+        'אירעה שגיאה בעת החיפוש. אנא נסה שוב.',
+        [{ text: 'אישור', onPress: () => setShowFilters(false) }]
+      );
+    }
+  };
+
   return (
     <SafeAreaView style={styles.mainContainer}>
       <ScrollView 
@@ -264,6 +370,7 @@ const HomeScreen = ({ navigation }) => {
         onClose={() => setShowFilters(false)}
         filters={filters}
         setFilters={setFilters}
+        onApplyFilters={handleApplyFilters}
       />
 
       {/* Bottom Navigation */}
