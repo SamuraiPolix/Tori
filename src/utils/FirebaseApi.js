@@ -1911,23 +1911,6 @@ class FirebaseApi {
     }
   }
 
-  static async getBusinessesByCategory(categoryId) {
-    try {
-      const snapshot = await firestore()
-        .collection('businesses')
-        .where('categories', 'array-contains', Number(categoryId))
-        .get();
-
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-    } catch (error) {
-      console.error('Error getting businesses by category:', error);
-      return [];
-    }
-  }
-
   static async searchBusinesses(searchText, filters = null) {
     try {
       const db = firestore();

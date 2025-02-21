@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import SalonCard from './SalonCard';
@@ -11,6 +11,43 @@ const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
   const [allSalons, setAllSalons] = useState([]);
   const [displaySalons, setDisplaySalons] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentFilters, setCurrentFilters] = useState(null);
+
+  const applyFiltersToSalons = useCallback((salons, filters) => {
+    if (!filters || !salons) return salons;
+
+    return salons.filter(salon => {
+      // Rating filter
+      if (salon.rating < filters.rating) {
+        console.log(`Salon ${salon.name} filtered out by rating: ${salon.rating} < ${filters.rating}`);
+        return false;
+      }
+
+      // Price filter (using average price of services)
+      const avgPrice = salon.services?.reduce((sum, service) => sum + (service.price || 0), 0) / (salon.services?.length || 1);
+      if (avgPrice > filters.maxPrice) {
+        console.log(`Salon ${salon.name} filtered out by price: ${avgPrice} > ${filters.maxPrice}`);
+        return false;
+      }
+
+      // Availability filter
+      if (filters.availability && !salon.isAvailableToday) {
+        console.log(`Salon ${salon.name} filtered out by availability`);
+        return false;
+      }
+
+      // Selected day filter
+      if (filters.selectedDay !== undefined) {
+        const hasAvailabilityForDay = salon.availability?.[filters.selectedDay]?.some(slot => !slot.isBooked);
+        if (!hasAvailabilityForDay) {
+          console.log(`Salon ${salon.name} filtered out by selected day: ${filters.selectedDay}`);
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, []);
 
   const fetchSalons = async () => {
     try {
@@ -24,7 +61,13 @@ const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
 
       const fetchedSalons = await FirebaseApi.getTopBusinesses(category.categoryId, 100);
       setAllSalons(fetchedSalons);
-      setDisplaySalons(fetchedSalons.slice(0, 10));
+      
+      // Apply current filters if they exist
+      const filteredSalons = currentFilters 
+        ? applyFiltersToSalons(fetchedSalons, currentFilters)
+        : fetchedSalons;
+      
+      setDisplaySalons(filteredSalons.slice(0, 10));
       setLoading(false);
     } catch (error) {
       console.error('Error fetching salons:', error);
@@ -33,7 +76,32 @@ const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
   };
 
   useImperativeHandle(ref, () => ({
-    fetchSalons
+    fetchSalons,
+    updateBusiness: (updatedBusiness) => {
+      setAllSalons(prevSalons => 
+        prevSalons.map(salon => {
+          if (salon.id === updatedBusiness.id) {
+            return updatedBusiness;
+          }
+          return salon;
+        })
+      );
+      setDisplaySalons(prevSalons => 
+        prevSalons.map(salon => {
+          if (salon.id === updatedBusiness.id) {
+            return updatedBusiness;
+          }
+          return salon;
+        })
+      );
+    },
+    applyFilters: (filters) => {
+      console.log('Applying filters to top salons:', filters);
+      setCurrentFilters(filters);
+      const filteredSalons = applyFiltersToSalons(allSalons, filters);
+      console.log('Filtered top salons:', filteredSalons.length);
+      setDisplaySalons(filteredSalons.slice(0, 10));
+    }
   }));
 
   useEffect(() => {
@@ -55,14 +123,23 @@ const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
           <Text style={styles.title}>מספרות מובילות</Text>
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={Color.primary} />
+          <ActivityIndicator size="small" color={Color.primaryColorAmaranthPurple} />
         </View>
       </View>
     );
   }
 
   if (!displaySalons.length) {
-    return null;
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>מספרות מובילות</Text>
+        </View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>לא נמצאו תוצאות מתאימות לפילטרים שנבחרו</Text>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -124,10 +201,21 @@ const styles = StyleSheet.create({
   cardContainer: {
     marginLeft: 16,
   },
-  loadingContainer: {
-    height: 200,
-    justifyContent: 'center',
+  emptyContainer: {
+    padding: 20,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   }
 });
 
