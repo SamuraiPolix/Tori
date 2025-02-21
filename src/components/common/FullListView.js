@@ -11,8 +11,30 @@ import { FontFamily } from '../../styles/GlobalStyles';
 import { useNavigation } from '@react-navigation/native';
 import FirebaseApi from '../../utils/FirebaseApi';
 
-const FullListView = ({ title, data, type }) => {
+const FullListView = ({ title, data, type, filters }) => {
   const navigation = useNavigation();
+
+  if (!data || data.length === 0) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{title}</Text>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>לא נמצאו תוצאות המתאימות לחיפוש שלך</Text>
+          {filters && (
+            <View style={styles.filterInfo}>
+              <Text style={styles.filterText}>פילטרים שהופעלו:</Text>
+              <Text style={styles.filterDetail}>• מרחק: עד {filters.distance} ק"מ</Text>
+              <Text style={styles.filterDetail}>• דירוג: {filters.rating} כוכבים ומעלה</Text>
+              <Text style={styles.filterDetail}>• מחיר מקסימלי: {filters.maxPrice}₪</Text>
+              {filters.availability && (
+                <Text style={styles.filterDetail}>• זמינות: היום בלבד</Text>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
 
   const renderItem = ({ item }) => {
     const handlePress = async () => {
@@ -59,10 +81,16 @@ const FullListView = ({ title, data, type }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{title}</Text>
+      {filters && (
+        <View style={styles.filterSummary}>
+          <Text style={styles.resultCount}>נמצאו {data.length} תוצאות</Text>
+          <Text style={styles.filterText}>מסונן לפי: {filters.distance}ק"מ, {filters.rating}⭐, עד {filters.maxPrice}₪</Text>
+        </View>
+      )}
       <FlatList
         data={data}
         renderItem={renderItem}
-        keyExtractor={(item) => item.businessId}
+        keyExtractor={(item) => item.businessId || item.id}
         contentContainerStyle={styles.listContent}
       />
     </View>
@@ -145,6 +173,49 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily["Assistant-Regular"],
     color: '#64748B',
   },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontFamily: FontFamily.regular,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  filterInfo: {
+    backgroundColor: '#F1F5F9',
+    padding: 16,
+    borderRadius: 12,
+    width: '100%',
+  },
+  filterText: {
+    fontSize: 16,
+    fontFamily: FontFamily.medium,
+    color: '#334155',
+    textAlign: 'right',
+    marginBottom: 8,
+  },
+  filterDetail: {
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    color: '#64748B',
+    textAlign: 'right',
+    marginBottom: 4,
+  },
+  filterSummary: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  resultCount: {
+    fontSize: 16,
+    fontFamily: FontFamily.medium,
+    color: '#334155',
+    textAlign: 'right',
+  }
 });
 
 export default FullListView;

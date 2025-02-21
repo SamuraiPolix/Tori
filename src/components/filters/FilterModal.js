@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,28 +6,73 @@ import {
   StyleSheet,
   TouchableOpacity,
   I18nManager,
-  ScrollView
+  ScrollView,
+  Pressable,
+  TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { Color, FontFamily } from '../../styles/GlobalStyles';
+import { CATEGORIES } from '../categories/categoriesData';
 
 // קונפיגורציה של RTL
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 
-const FilterModal = ({ visible, onClose, filters, setFilters }) => {
+const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) => {
   const formatDistance = useCallback((value) => {
     return `${value} ק"מ`;
   }, []);
 
   const formatRating = useCallback((value) => {
-    return `${value.toFixed(1)} כוכבים`;
+    return `${Math.round(value)} כוכבים`;
   }, []);
 
   const formatPrice = useCallback((value) => {
     return `₪${value}`;
   }, []);
+
+  const handleApplyFilters = useCallback(() => {
+    onApplyFilters(filters);
+    onClose();
+  }, [filters, onApplyFilters, onClose]);
+
+  // Using local state to prevent slider stuttering
+  const [localFilters, setLocalFilters] = useState(filters);
+
+  // Update local filters when props change
+  useEffect(() => {
+    setLocalFilters(filters);
+  }, [filters]);
+
+  // State for category dropdown
+  const [showCategories, setShowCategories] = useState(false);
+
+  // Handle numeric input changes
+  const handleNumericInput = useCallback((key, value) => {
+    const numValue = parseInt(value) || 0;
+    let finalValue = numValue;
+
+    // Validation rules
+    switch(key) {
+      case 'rating':
+        finalValue = Math.min(Math.max(Math.round(numValue), 1), 5);
+        break;
+      case 'maxPrice':
+      case 'distance':
+        finalValue = Math.max(numValue, 0);
+        break;
+    }
+
+    setLocalFilters(prev => ({ ...prev, [key]: finalValue }));
+    setFilters(prev => ({ ...prev, [key]: finalValue }));
+  }, [setFilters]);
+
+  // Update parent state only when slider ends
+  const handleSliderComplete = useCallback((key, value) => {
+    const finalValue = key === 'rating' ? Math.round(value) : value;
+    setFilters(prev => ({ ...prev, [key]: finalValue }));
+  }, [setFilters]);
 
   // יצירת מערך של 7 ימים קדימה
   const nextWeekDays = useMemo(() => {
@@ -72,152 +117,228 @@ const FilterModal = ({ visible, onClose, filters, setFilters }) => {
             </View>
           </View>
 
-          <View style={styles.filterSection}>
-            <View style={styles.filterTitleContainer}>
-              <Text style={styles.filterTitle}>
-                <Ionicons name="location" size={20} color="#666" /> מרחק
-              </Text>
-              <Text style={styles.filterValue}>
-                {formatDistance(filters.distance)} 🚗
-              </Text>
+          <ScrollView style={styles.filtersContainer}>
+            {/* Category Filter */}
+            <View style={styles.filterSection}>
+              <View style={styles.filterTitleContainer}>
+                <Text style={styles.filterTitle}>
+                  <Ionicons name="sparkles" size={20} color={Color.primaryColorAmaranthPurple} /> קטגוריה
+                </Text>
+                <Text style={styles.filterValue}>
+                  {CATEGORIES.find(cat => cat.id === localFilters.categoryId)?.title || 'הכל'}
+                </Text>
+              </View>
+              <Pressable
+                style={[
+                  styles.categorySelector,
+                  showCategories && styles.categorySelectorActive
+                ]}
+                onPress={() => setShowCategories(!showCategories)}
+              >
+                <Text style={styles.categoryText}>
+                  {CATEGORIES.find(cat => cat.id === localFilters.categoryId)?.title || 'בחר קטגוריה'}
+                </Text>
+                <Ionicons 
+                  name={showCategories ? "chevron-up" : "chevron-down"} 
+                  size={24} 
+                  color={Color.primaryColorAmaranthPurple}
+                />
+              </Pressable>
+              {showCategories && (
+                <View style={styles.categoriesList}>
+                  {CATEGORIES.map((category) => (
+                    <TouchableOpacity
+                      key={category.id}
+                      style={[
+                        styles.categoryItem,
+                        localFilters.categoryId === category.id && styles.selectedCategoryItem
+                      ]}
+                      onPress={() => {
+                        setLocalFilters(prev => ({ ...prev, categoryId: category.id }));
+                        setFilters(prev => ({ ...prev, categoryId: category.id }));
+                        setShowCategories(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.categoryItemText,
+                        localFilters.categoryId === category.id && styles.selectedCategoryItemText
+                      ]}>
+                        {category.title}
+                      </Text>
+                      {localFilters.categoryId === category.id && (
+                        <Ionicons name="checkmark" size={20} color={Color.primaryColorAmaranthPurple} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
-            <View style={styles.sliderContainer}>
+
+            {/* Distance Filter */}
+            <View style={styles.filterSection}>
+              <View style={styles.filterTitleContainer}>
+                <Text style={styles.filterTitle}>מרחק</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.numericInput}
+                    value={String(localFilters.distance)}
+                    onChangeText={(value) => handleNumericInput('distance', value)}
+                    keyboardType="numeric"
+                    maxLength={3}
+                  />
+                  <Text style={styles.unitText}>ק"מ</Text>
+                </View>
+              </View>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={50}
+                value={localFilters.distance}
+                onValueChange={(value) => setLocalFilters(prev => ({ ...prev, distance: Math.round(value) }))}
+                onSlidingComplete={(value) => handleSliderComplete('distance', Math.round(value))}
+                minimumTrackTintColor={Color.primaryColorAmaranthPurple}
+                maximumTrackTintColor="#D3D3D3"
+                thumbTintColor={Color.primaryColorAmaranthPurple}
+              />
+            </View>
+
+            {/* Rating Filter */}
+            <View style={styles.filterSection}>
+              <View style={styles.filterTitleContainer}>
+                <Text style={styles.filterTitle}>דירוג</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.numericInput}
+                    value={String(localFilters.rating)}
+                    onChangeText={(value) => handleNumericInput('rating', value)}
+                    keyboardType="numeric"
+                    maxLength={1}
+                  />
+                  <Text style={styles.unitText}>כוכבים</Text>
+                </View>
+              </View>
               <Slider
                 style={styles.slider}
                 minimumValue={1}
-                maximumValue={120}
-                step={1}
-                value={filters.distance}
-                onValueChange={(value) =>
-                  setFilters(prev => ({ ...prev, distance: value }))
-                }
-                minimumTrackTintColor={Color.primaryColorAmaranthPurple}
-                maximumTrackTintColor="#DDD"
-                thumbTintColor={Color.primaryColorAmaranthPurple}
-              />
-            </View>
-          </View>
-
-          <View style={styles.filterSection}>
-            <View style={styles.filterTitleContainer}>
-              <Text style={styles.filterTitle}>
-                <Ionicons name="star" size={20} color="#FFD700" /> דירוג
-              </Text>
-              <Text style={styles.filterValue}>
-                {formatRating(filters.rating)} ⭐
-              </Text>
-            </View>
-            <View style={styles.sliderContainer}>
-              <Slider
-                style={styles.slider}
-                minimumValue={3}
                 maximumValue={5}
-                step={0.5}
-                value={filters.rating}
-                onValueChange={(value) =>
-                  setFilters(prev => ({ ...prev, rating: value }))
-                }
+                step={1}
+                value={localFilters.rating}
+                onValueChange={(value) => setLocalFilters(prev => ({ ...prev, rating: Math.round(value) }))}
+                onSlidingComplete={(value) => handleSliderComplete('rating', Math.round(value))}
                 minimumTrackTintColor={Color.primaryColorAmaranthPurple}
-                maximumTrackTintColor="#DDD"
+                maximumTrackTintColor="#D3D3D3"
                 thumbTintColor={Color.primaryColorAmaranthPurple}
               />
             </View>
-          </View>
 
-          <View style={styles.filterSection}>
-            <View style={styles.filterTitleContainer}>
-              <Text style={styles.filterTitle}>
-                <Ionicons name="cash" size={20} color="#2E8B57" /> מחיר
-              </Text>
-              <Text style={styles.filterValue}>
-                {formatPrice(filters.price)} 💰
-              </Text>
-            </View>
-            <View style={styles.sliderContainer}>
+            {/* Price Filter */}
+            <View style={styles.filterSection}>
+              <View style={styles.filterTitleContainer}>
+                <Text style={styles.filterTitle}>מחיר מקסימלי</Text>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.numericInput}
+                    value={String(localFilters.maxPrice)}
+                    onChangeText={(value) => handleNumericInput('maxPrice', value)}
+                    keyboardType="numeric"
+                    maxLength={4}
+                  />
+                  <Text style={styles.unitText}>₪</Text>
+                </View>
+              </View>
               <Slider
                 style={styles.slider}
-                minimumValue={10}
+                minimumValue={0}
                 maximumValue={1000}
-                step={10}
-                value={filters.price}
-                onValueChange={(value) =>
-                  setFilters(prev => ({ ...prev, price: value }))
-                }
+                value={localFilters.maxPrice}
+                onValueChange={(value) => setLocalFilters(prev => ({ ...prev, maxPrice: Math.round(value) }))}
+                onSlidingComplete={(value) => handleSliderComplete('maxPrice', Math.round(value))}
                 minimumTrackTintColor={Color.primaryColorAmaranthPurple}
-                maximumTrackTintColor="#DDD"
+                maximumTrackTintColor="#D3D3D3"
                 thumbTintColor={Color.primaryColorAmaranthPurple}
               />
             </View>
-          </View>
 
-          <View style={styles.filterSection}>
-            <View style={styles.filterTitleContainer}>
-              <Text style={styles.filterTitle}>
-                <Ionicons name="calendar" size={20} color="#666" /> בחר תאריך
-              </Text>
-              <Text style={styles.filterValue}>
-                {filters.selectedDay !== undefined ? nextWeekDays[filters.selectedDay].dayName : 'לא נבחר'} 📅
-              </Text>
-            </View>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.daysScrollView}
-              contentContainerStyle={styles.daysScrollContent}
-            >
-              {nextWeekDays.map((day) => (
-                <TouchableOpacity
-                  key={day.id}
-                  style={[
-                    styles.dayButton,
-                    filters.selectedDay === day.id && styles.dayButtonSelected
-                  ]}
-                  onPress={() => setFilters(prev => ({
-                    ...prev,
-                    selectedDay: prev.selectedDay === day.id ? undefined : day.id
-                  }))}
-                >
-                  <Text style={[
-                    styles.dayName,
-                    filters.selectedDay === day.id && styles.dayTextSelected
-                  ]}>
-                    {day.dayName}
-                  </Text>
-                  <Text style={[
-                    styles.dayDate,
-                    filters.selectedDay === day.id && styles.dayTextSelected
-                  ]}>
-                    {day.dayMonth}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          <View style={styles.filterSection}>
-            <View style={styles.availabilityFilter}>
-              <Text style={styles.filterTitle}>זמינות להיום</Text>
-              <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  filters.availability && styles.toggleButtonActive
-                ]}
-                onPress={() => setFilters(prev => ({ ...prev, availability: !prev.availability }))}
+            {/* Day Filter */}
+            <View style={styles.filterSection}>
+              <View style={styles.filterTitleContainer}>
+                <Text style={styles.filterTitle}>
+                  <Ionicons name="calendar" size={20} color="#666" /> בחר תאריך
+                </Text>
+                <Text style={styles.filterValue}>
+                  {localFilters.selectedDay !== undefined ? nextWeekDays[localFilters.selectedDay].dayName : 'לא נבחר'} 📅
+                </Text>
+              </View>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.daysScrollView}
+                contentContainerStyle={styles.daysScrollContent}
               >
-                <View style={[
-                  styles.toggleCircle,
-                  filters.availability && styles.toggleCircleActive
-                ]} />
-              </TouchableOpacity>
+                {nextWeekDays.map((day) => (
+                  <TouchableOpacity
+                    key={day.id}
+                    style={[
+                      styles.dayButton,
+                      localFilters.selectedDay === day.id && styles.dayButtonSelected
+                    ]}
+                    onPress={() => {
+                      const newDay = localFilters.selectedDay === day.id ? undefined : day.id;
+                      setLocalFilters(prev => ({ ...prev, selectedDay: newDay }));
+                      handleSliderComplete('selectedDay', newDay);
+                    }}
+                  >
+                    <Text style={[
+                      styles.dayName,
+                      localFilters.selectedDay === day.id && styles.dayTextSelected
+                    ]}>
+                      {day.dayName}
+                    </Text>
+                    <Text style={[
+                      styles.dayDate,
+                      localFilters.selectedDay === day.id && styles.dayTextSelected
+                    ]}>
+                      {day.dayMonth}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
-          </View>
 
-          <TouchableOpacity 
-            style={styles.applyButton} 
-            onPress={onClose}
-          >
-            <Text style={styles.applyButtonText}>החל פילטרים</Text>
-          </TouchableOpacity>
+            {/* Availability Filter */}
+            <View style={styles.filterSection}>
+              <View style={styles.availabilityFilter}>
+                <Text style={styles.filterTitle}>
+                  <Ionicons name="time" size={20} color="#666" /> זמינות להיום
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.toggleButton,
+                    localFilters.availability && styles.toggleButtonActive
+                  ]}
+                  onPress={() => {
+                    const newAvailability = !localFilters.availability;
+                    setLocalFilters(prev => ({ ...prev, availability: newAvailability }));
+                    handleSliderComplete('availability', newAvailability);
+                  }}
+                >
+                  <View style={[
+                    styles.toggleCircle,
+                    localFilters.availability && styles.toggleCircleActive
+                  ]} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.applyButton}
+              onPress={handleApplyFilters}
+            >
+              <Text style={styles.applyButtonText}>החל פילטרים</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -231,108 +352,66 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
-    paddingTop: 10,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    maxHeight: '90%',
+    width: '100%',
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 10,
+    justifyContent: 'space-between',
+    padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+  },
+  closeButton: {
+    padding: 5,
   },
   titleContainer: {
     flex: 1,
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 24,
-    fontFamily: FontFamily.assistantBold,
-    color: Color.primaryColorAmaranthPurple,
-    textAlign: 'center',
-  },
-  closeButton: {
-    width: 24,
-    height: 24,
+    fontSize: 18,
+    fontFamily: FontFamily.bold,
+    color: '#333',
   },
   filterIconContainer: {
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 30,
+    alignItems: 'flex-end',
+  },
+  filtersContainer: {
+    paddingHorizontal: 20,
   },
   filterSection: {
-    marginBottom: 25,
+    marginVertical: 15,
   },
   filterTitleContainer: {
-    flexDirection: 'row-reverse',
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
   },
   filterTitle: {
     fontSize: 16,
-    fontFamily: FontFamily.assistantBold,
-    color: Color.grayscaleColorBlack,
+    fontFamily: FontFamily.regular,
+    color: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   filterValue: {
     fontSize: 14,
-    fontFamily: FontFamily.assistantRegular,
-    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.regular,
+    color: '#666',
   },
   sliderContainer: {
-    transform: [{ scaleX: -1 }],
+    paddingHorizontal: 5,
   },
   slider: {
     width: '100%',
     height: 40,
-  },
-  availabilityFilter: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  toggleButton: {
-    width: 50,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#DDD',
-    padding: 2,
-  },
-  toggleButtonActive: {
-    backgroundColor: Color.primaryColorAmaranthPurple,
-  },
-  toggleCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'white',
-    transform: [{ translateX: 20 }],
-  },
-  toggleCircleActive: {
-    transform: [{ translateX: 0 }],
-  },
-  applyButton: {
-    backgroundColor: Color.primaryColorAmaranthPurple,
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  applyButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontFamily: FontFamily.assistantBold,
   },
   daysScrollView: {
     marginTop: 10,
@@ -341,40 +420,155 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   dayButton: {
-    backgroundColor: Color.grayscaleColorWhite,
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    padding: 10,
     marginHorizontal: 5,
     alignItems: 'center',
     minWidth: 80,
-    borderWidth: 1,
-    borderColor: '#eee',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
   dayButtonSelected: {
     backgroundColor: Color.primaryColorAmaranthPurple,
-    borderColor: Color.primaryColorAmaranthPurple,
   },
   dayName: {
-    fontSize: 16,
-    fontFamily: FontFamily.assistantSemiBold,
-    color: Color.grayscaleColorBlack,
-    marginBottom: 4,
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
+    color: '#333',
+    marginBottom: 5,
   },
   dayDate: {
-    fontSize: 14,
-    fontFamily: FontFamily.assistantRegular,
-    color: Color.grayscaleColorGray,
+    fontSize: 12,
+    fontFamily: FontFamily.regular,
+    color: '#666',
   },
   dayTextSelected: {
-    color: Color.grayscaleColorWhite,
+    color: 'white',
+  },
+  availabilityFilter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  toggleButton: {
+    width: 50,
+    height: 30,
+    backgroundColor: '#DDD',
+    borderRadius: 15,
+    padding: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    justifyContent: 'flex-end',
+  },
+  toggleCircle: {
+    width: 26,
+    height: 26,
+    backgroundColor: 'white',
+    borderRadius: 13,
+  },
+  buttonContainer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  applyButton: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontFamily: FontFamily.regular,
+  },
+  categorySelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(158, 42, 155, 0.2)',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  categorySelectorActive: {
+    borderColor: Color.primaryColorAmaranthPurple,
+    backgroundColor: 'rgba(158, 42, 155, 0.05)',
+  },
+  categoryText: {
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.regular,
+    fontSize: 16,
+  },
+  categoriesList: {
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(158, 42, 155, 0.2)',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    maxHeight: 200,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(158, 42, 155, 0.1)',
+  },
+  selectedCategoryItem: {
+    backgroundColor: 'rgba(158, 42, 155, 0.05)',
+  },
+  categoryItemText: {
+    color: '#666',
+    fontFamily: FontFamily.regular,
+    fontSize: 16,
+  },
+  selectedCategoryItemText: {
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.medium,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  numericInput: {
+    width: 50,
+    height: 30,
+    borderWidth: 1,
+    borderColor: Color.primaryColorAmaranthPurple,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    marginRight: 5,
+    textAlign: 'center',
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.regular,
+  },
+  unitText: {
+    color: Color.primaryColorAmaranthPurple,
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import SalonCard from './SalonCard';
@@ -13,15 +13,15 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
   const [displaySalons, setDisplaySalons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [currentFilters, setCurrentFilters] = useState(null);
 
-  // Expose fetchNearbySalons to parent through ref
+  // Expose methods to parent through ref
   useImperativeHandle(ref, () => ({
     fetchNearbySalons,
     updateBusiness: (updatedBusiness) => {
       setAllSalons(prevSalons => 
         prevSalons.map(salon => {
           if (salon.id === updatedBusiness.id) {
-            // Preserve the distance property when updating
             return { ...updatedBusiness, distance: salon.distance };
           }
           return salon;
@@ -30,14 +30,62 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
       setDisplaySalons(prevSalons => 
         prevSalons.map(salon => {
           if (salon.id === updatedBusiness.id) {
-            // Preserve the distance property when updating
             return { ...updatedBusiness, distance: salon.distance };
           }
           return salon;
         })
       );
+    },
+    applyFilters: (filters) => {
+      console.log('Applying filters to nearby salons:', filters);
+      setCurrentFilters(filters);
+      const filteredSalons = applyFiltersToSalons(allSalons, filters);
+      console.log('Filtered nearby salons:', filteredSalons.length);
+      setDisplaySalons(filteredSalons);
     }
   }));
+
+  const applyFiltersToSalons = useCallback((salons, filters) => {
+    if (!filters || !salons) return salons;
+
+    return salons.filter(salon => {
+      // Distance filter
+      if (salon.distance > filters.distance) {
+        console.log(`Salon ${salon.name} filtered out by distance: ${salon.distance} > ${filters.distance}`);
+        return false;
+      }
+
+      // Rating filter
+      if (salon.rating < filters.rating) {
+        console.log(`Salon ${salon.name} filtered out by rating: ${salon.rating} < ${filters.rating}`);
+        return false;
+      }
+
+      // Price filter (using average price of services)
+      const avgPrice = salon.services?.reduce((sum, service) => sum + (service.price || 0), 0) / (salon.services?.length || 1);
+      if (avgPrice > filters.maxPrice) {
+        console.log(`Salon ${salon.name} filtered out by price: ${avgPrice} > ${filters.maxPrice}`);
+        return false;
+      }
+
+      // Availability filter
+      if (filters.availability && !salon.isAvailableToday) {
+        console.log(`Salon ${salon.name} filtered out by availability`);
+        return false;
+      }
+
+      // Selected day filter
+      if (filters.selectedDay !== undefined) {
+        const hasAvailabilityForDay = salon.availability?.[filters.selectedDay]?.some(slot => !slot.isBooked);
+        if (!hasAvailabilityForDay) {
+          console.log(`Salon ${salon.name} filtered out by selected day: ${filters.selectedDay}`);
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, []);
 
   const fetchNearbySalons = async () => {
     try {
@@ -137,6 +185,12 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
     fetchNearbySalons();
   }, []);
 
+  useEffect(() => {
+    if (currentFilters && allSalons.length > 0) {
+      applyFiltersToSalons(allSalons, currentFilters);
+    }
+  }, [currentFilters, allSalons, applyFiltersToSalons]);
+
   const handleViewAll = () => {
     navigation.navigate('FullList', {
       title: 'עסקים בקרבתך',
@@ -158,8 +212,35 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
     );
   }
 
-  if (errorMsg || displaySalons.length === 0) {
-    return null;
+  if (errorMsg) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>מספרות בסביבתך</Text>
+        </View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>{errorMsg}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!displaySalons.length) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>מספרות בסביבתך</Text>
+        </View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            {currentFilters 
+              ? 'לא נמצאו עסקים בקרבתך המתאימים לפילטרים שנבחרו'
+              : 'לא נמצאו עסקים בקרבתך'
+            }
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -221,10 +302,21 @@ const styles = StyleSheet.create({
   cardContainer: {
     marginLeft: 16,
   },
-  loadingContainer: {
-    height: 200,
-    justifyContent: 'center',
+  emptyContainer: {
+    padding: 20,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   }
 });
 
