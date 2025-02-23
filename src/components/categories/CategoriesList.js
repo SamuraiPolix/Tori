@@ -20,30 +20,25 @@ const CategoriesList = ({ onSelectCategory, navigation }) => {
 
   const fetchCategories = async () => {
     try {
-      const categoriesData = await FirebaseApi.getCategories();
-      const processedCategories = categoriesData.map(category => {
-        const localCategory = CATEGORIES.find(cat => cat.id === category.categoryId);
-        return {
-          id: category.id,
-          categoryId: category.categoryId,
-          title: category.name,
-          type: category.id,
-          icon: localCategory ? localCategory.icon : defaultCategoryIcon
-        };
-      });
+      // Use the predefined categories directly
+      const processedCategories = CATEGORIES.map(category => ({
+        id: category.id,  // Keep as number
+        title: category.title,
+        icon: category.icon
+      }));
       
       setCategories(processedCategories);
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error('Error processing categories:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCategoryPress = (category) => {
-    setSelectedCategory(category.type);
+    setSelectedCategory(category.id);  
     if (onSelectCategory) {
-      onSelectCategory(category);
+      onSelectCategory(category.id);
     }
   };
 
@@ -87,7 +82,7 @@ const CategoriesList = ({ onSelectCategory, navigation }) => {
             key={category.id}
             icon={category.icon}
             title={category.title}
-            isSelected={selectedCategory === category.type}
+            isSelected={selectedCategory === category.id}
             onPress={() => handleCategoryPress(category)}
           />
         ))}

@@ -2,39 +2,51 @@ export const CATEGORIES = [
   { 
     id: 1,
     icon: require('../../assets/rectangle-406.png'),
-    title: 'תספורת',
-    type: 'haircut'
+    title: 'תספורת'
   },
   { 
     id: 2,
     icon: require('../../assets/rectangle-4062.png'),
-    title: 'צביעה',
-    type: 'coloring'
+    title: 'ספא'
   },
   { 
-    id: 6,
-    icon: require('../../assets/rectangle-4063.png'),
-    title: 'פן',
-    type: 'blowdry'
-  },
-  { 
-    // TODO: add icon
     id: 3,
+    icon: require('../../assets/rectangle-4063.png'),
+    title: 'ציפורניים'
+  },
+  { 
+    id: 4,
     icon: require('../../assets/rectangle-62.png'),
-    title: 'איפור',
-    type: 'makeup'
+    title: 'קוסמטיקה'
   },
   { 
     id: 5,
     icon: require('../../assets/rectangle-4061.png'),
-    title: 'מניקור',
-    type: 'nails'
+    title: 'איפור'
   },
   { 
-    // TODO: add icon
-    id: 4,
+    id: 6,
+    icon: require('../../assets/rectangle-406.png'),
+    title: 'שיער'
+  },
+  { 
+    id: 7,
     icon: require('../../assets/rectangle-62.png'),
-    title: 'טיפול פנים',
-    type: 'facial'
+    title: 'טיפולי פנים'
+  },
+  { 
+    id: 8,
+    icon: require('../../assets/rectangle-4062.png'),
+    title: 'טיפולי גוף'
+  },
+  { 
+    id: 9,
+    icon: require('../../assets/rectangle-4063.png'),
+    title: 'הסרת שיער'
+  },
+  { 
+    id: 10,
+    icon: require('../../assets/rectangle-4061.png'),
+    title: 'עיסוי'
   }
 ];
