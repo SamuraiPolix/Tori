@@ -2,6 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import storage from '@react-native-firebase/storage';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 class FirebaseApi {
   // Auth methods
@@ -305,6 +306,9 @@ class FirebaseApi {
         updatedAt: firestore.FieldValue.serverTimestamp()
       });
 
+      // not needed for now - using cloud functions
+      // this.sendAppointmentStatusNotification(appointmentRef.customerId, appointmentId, newStatus);
+
       return true;
     } catch (error) {
       console.error('Error updating appointment status:', error);
@@ -320,20 +324,89 @@ class FirebaseApi {
     return firestore().collection('appointments').doc(appointmentId);
   }
 
-  static async sendAppointmentStatusNotification(customerId, appointmentId, status) {
-    // Get user's notification token
-    const userDoc = await firestore()
-      .collection('users')
-      .doc(customerId)
+  static async sendAppointmentStatusNotification(appointmentId, status) {
+    try {
+      // Get appointment details
+      const appointmentDoc = await firestore()
+      .collection('appointments')
+      .doc(appointmentId)
       .get();
+      
+      const appointment = appointmentDoc.data();
+      if (!appointment) return;
 
-    if (!userDoc.exists) return;
+      // Get user data to check notification preferences and token
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(appointment.customerId)
+        .get();
+      
+      const userData = userDoc.data();
+      if (!userData?.fcmToken || !userData.notificationSettings?.statusUpdates) return;
 
-    const userData = userDoc.data();
-    if (!userData.notificationToken || !userData.notificationSettings?.statusUpdates) return;
+      console.log("Sending notification:", userData.fcmToken)
 
-    // Send notification logic here
-    // This would typically involve calling a cloud function or using a notification service
+      // Get business details
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(appointment.businessId)
+        .get();
+      
+      const businessData = businessDoc.data();
+      const appointmentDate = appointment.startTime.toDate();
+      const formattedDate = appointmentDate.toLocaleDateString();
+      const formattedTime = appointmentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      // Prepare notification message based on status
+      let title, body;
+      switch (status) {
+        case 'approved':
+          title = 'Appointment Approved! ';
+          body = `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} has been approved.`;
+          break;
+        case 'canceled':
+          title = 'Appointment Canceled ';
+          body = `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} has been canceled.`;
+          break;
+        case 'completed':
+          title = 'Appointment Completed ';
+          body = `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} has been marked as completed.`;
+          break;
+        case 'pending':
+          title = 'Appointment Status Update';
+          body = `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} is pending approval.`;
+          break;
+        default:
+          title = 'Appointment Update';
+          body = `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} has been updated.`;
+      }
+
+      const notificationData = {
+        token: userData.fcmToken,
+        title,
+        body,
+        data: {
+          type: 'APPOINTMENT_STATUS_UPDATE',
+          appointmentId,
+          businessId: appointment.businessId,
+          status
+        }
+      };
+
+      // Add to notifications collection for cloud function processing
+      await firestore()
+        .collection('notifications')
+        .add({
+          ...notificationData,
+          userId: appointment.customerId,
+          createdAt: this.getServerTimestamp(),
+          status: 'pending'
+        });
+
+    } catch (error) {
+      console.error('Error sending appointment status notification:', error);
+      // Don't throw the error since this is a non-critical operation
+    }
   }
 
   // Appointments methods
@@ -657,6 +730,8 @@ class FirebaseApi {
   static async signInWithEmail(email, password) {
     const { user } = await auth().signInWithEmailAndPassword(email, password);
     const userData = await this.getUserData(user.uid);
+    
+    await this.refreshFCMToken();
     await this.updateLastLogin(user.uid);
     return { user, userData };
   }
@@ -672,6 +747,8 @@ class FirebaseApi {
     const googleCredential = auth.GoogleAuthProvider.credential(userInfo.data.idToken);
     const userCredential = await auth().signInWithCredential(googleCredential);
     const user = userCredential.user;
+
+    await this.refreshFCMToken();
 
     // Prepare user data
     const userData = {
@@ -707,6 +784,7 @@ class FirebaseApi {
     console.log('Confirming phone code');
     const credential = await confirmation.confirm(code);
     console.log('Phone code confirmed, user:', credential.user);
+    await this.refreshFCMToken();
     return credential;
   }
 
@@ -749,6 +827,7 @@ class FirebaseApi {
     console.log('Confirming phone code');
     const credential = await confirmation.confirm(code);
     console.log('Phone code confirmed, user:', credential.user);
+    await this.refreshFCMToken();
     return credential;
   }
 
@@ -786,11 +865,13 @@ class FirebaseApi {
 
   static async signInWithEmailAndPassword(email, password) {
     const userCredential = await auth().signInWithEmailAndPassword(email, password);
+    await this.refreshFCMToken();
     return userCredential.user;
   }
 
   static async signOut() {
     await auth().signOut();
+    await this.removeFCMToken(this.getCurrentUser().uid);
   }
 
   static getCurrentUser() {
@@ -1196,6 +1277,7 @@ class FirebaseApi {
     await firestore().collection('users').doc(userId).update({
       lastLogin: this.getServerTimestamp()
     });
+    await this.refreshFCMToken();
   }
 
   static async resetPassword(email) {
@@ -1311,11 +1393,21 @@ class FirebaseApi {
   }
 
   static async requestPushNotificationPermission() {
-    const authStatus = await messaging().requestPermission();
-    return (
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL
-    );
+    if (Platform.OS === 'ios') {
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+      return enabled;
+    } else if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const permission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
+      return permission === PermissionsAndroid.RESULTS.GRANTED;
+    }
+
+    return true;
   }
 
   static async updateNotificationSettings(userId, settings) {
@@ -1326,6 +1418,214 @@ class FirebaseApi {
         notificationSettings: settings,
         updatedAt: this.getServerTimestamp()
       });
+  }
+
+  // FCM Methods
+  static async requestNotificationPermission() {
+    try {
+      if (Platform.OS === 'ios') {
+        const authStatus = await messaging().requestPermission();
+        return authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+               authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      } else if (Platform.OS === 'android') {
+        if (Platform.Version >= 33) {
+          const permission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+          );
+          return permission === PermissionsAndroid.RESULTS.GRANTED;
+        }
+        return true; // Always true for Android < 33
+      }
+      return false;
+    } catch (error) {
+      console.error('Permission request failed:', error);
+      return false;
+    }
+  }
+
+  static async getFCMToken() {
+    try {
+      const token = await messaging().getToken();
+      return token;
+    } catch (error) {
+      console.error('Failed to get FCM token:', error);
+      return null;
+    }
+  }
+
+  static async refreshFCMToken() {
+    const currentUser = this.getCurrentUser();
+    if (currentUser) {
+      await this.saveFCMToken(currentUser.uid, await this.getFCMToken());
+    }
+  }
+
+  static async saveFCMToken(userId, token) {
+    console.log('Saving FCM token:', token, 'For user:', userId);
+    try {
+      let userDoc = await firestore()
+        .collection('users')
+        .doc(userId)
+        .get();
+      if (userDoc.exists) {
+        await userDoc.ref.update({
+          fcmToken: token,
+          tokenUpdatedAt: this.getServerTimestamp()
+        });
+      } else {
+        const businessDoc = await firestore()
+          .collection('businesses')
+          .doc(userId)
+          .get();
+        if (businessDoc.exists) {
+          await businessDoc.ref.update({
+            fcmToken: token,
+            tokenUpdatedAt: this.getServerTimestamp()
+          });
+        }
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to save FCM token:', error);
+      return false;
+    }
+  }
+
+  static async removeFCMToken(userId) {
+    var doc = await firestore()
+      .collection('users')
+      .doc(userId)
+      .get();
+
+    if (!doc.exists){
+      doc = await firestore()
+        .collection('businesses')
+        .doc(userId)
+        .get();
+    }
+
+    doc.update({
+      fcmToken: null,
+      tokenUpdatedAt: this.getServerTimestamp()
+    });
+  }
+
+  static subscribeToTopic(topic) {
+    return messaging().subscribeToTopic(topic);
+  }
+
+  static unsubscribeFromTopic(topic) {
+    return messaging().unsubscribeFromTopic(topic);
+  }
+
+  static async setupMessaging() {
+    try {
+      const hasPermission = await this.requestNotificationPermission();
+      if (!hasPermission) {
+        console.log('User denied notification permissions');
+        return false;
+      }
+
+      const token = await this.getFCMToken();
+      if (!token) {
+        console.log('Failed to get FCM token');
+        return false;
+      }
+
+      const currentUser = this.getCurrentUser();
+      if (currentUser) {
+        await this.saveFCMToken(currentUser.uid, token);
+      }
+
+      // Set up message handlers
+      messaging().onMessage(async remoteMessage => {
+        // Handle foreground messages here
+        console.log('Received foreground message:', remoteMessage);
+      });
+
+      // Set up background handler
+      messaging().setBackgroundMessageHandler(async remoteMessage => {
+        // Handle background messages here
+        console.log('Received background message:', remoteMessage);
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Failed to setup messaging:', error);
+      return false;
+    }
+  }
+
+  static async deleteMessagingData() {
+    try {
+      const currentUser = this.getCurrentUser();
+      if (currentUser) {
+        await this.removeFCMToken(currentUser.uid);
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to delete messaging data:', error);
+      return false;
+    }
+  }
+
+  static onMessageReceived(callback) {
+    return messaging().onMessage(callback);
+  }
+
+  static onNotificationOpenedApp(callback) {
+    return messaging().onNotificationOpenedApp(callback);
+  }
+
+  static async getInitialNotification() {
+    return await messaging().getInitialNotification();
+  }
+
+  static async sendAppointmentApprovedNotification(appointment) {
+    try {
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(appointment.userId)
+        .get();
+      
+      const userData = userDoc.data();
+      if (!userData?.fcmToken) return;
+
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(appointment.businessId)
+        .get();
+      
+      const businessData = businessDoc.data();
+      const appointmentDate = appointment.startTime.toDate();
+      const formattedDate = appointmentDate.toLocaleDateString();
+      const formattedTime = appointmentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const notificationData = {
+        token: userData.fcmToken,
+        title: 'Appointment Approved! ',
+        body: `Your appointment with ${businessData.businessName} on ${formattedDate} at ${formattedTime} has been approved.`,
+        data: {
+          type: 'APPOINTMENT_APPROVED',
+          appointmentId: appointment.id,
+          businessId: appointment.businessId
+        }
+      };
+
+      // Send to your cloud function or backend API that handles FCM sending
+      // You'll need to implement a cloud function for this
+      await firestore()
+        .collection('notifications')
+        .add({
+          ...notificationData,
+          userId: appointment.userId,
+          createdAt: this.getServerTimestamp(),
+          status: 'pending'
+        });
+    } catch (error) {
+      console.error('Error sending appointment approved notification:', error);
+      throw error;
+    }
   }
 
   // Appointment methods
@@ -1571,10 +1871,6 @@ class FirebaseApi {
   static async signInWithEmailAndPassword(email, password) {
     const userCredential = await auth().signInWithEmailAndPassword(email, password);
     return userCredential.user;
-  }
-
-  static async signOut() {
-    await auth().signOut();
   }
 
   static getCurrentUser() {
