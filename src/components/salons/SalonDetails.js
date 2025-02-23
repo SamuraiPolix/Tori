@@ -452,7 +452,18 @@ const SalonDetails = ({ route }) => {
   const handleNavigate = () => {
     const address = businessData.address;
     const businessName = businessData.name;
-    const searchQuery = encodeURIComponent(`${address}, ${businessName}`);
+    var searchQuery = encodeURIComponent(`${businessName}`);
+    if (address) {
+      searchQuery = encodeURIComponent(`${address}`);
+    }
+    else {
+      const location = businessData.location;
+      if (location) {
+        searchQuery = encodeURIComponent(`${location.latitude},${location.longitude}`);
+      }
+    }
+    // const searchQuery = encodeURIComponent(`${address}, ${businessName}`);
+
     
     const url = Platform.select({
       ios: `maps://?q=${searchQuery}`,

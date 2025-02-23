@@ -17,6 +17,7 @@ import {
 import { FontFamily, Color } from "../../styles/GlobalStyles";
 import { Ionicons } from '@expo/vector-icons';
 import FirebaseApi from '../../utils/FirebaseApi';
+import LocationPicker from '../../components/location/LocationPicker';
 
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
@@ -51,6 +52,8 @@ const BusinessSignupScreen = ({ navigation, route }) => {
   const [tempSelectedCategories, setTempSelectedCategories] = React.useState([]);
   const [errors, setErrors] = React.useState({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [location, setLocation] = React.useState(null);
+  const [locationError, setLocationError] = React.useState(null);
 
   const openCategoryPicker = () => {
     setTempSelectedCategories([...formData.selectedCategories]);
@@ -130,9 +133,10 @@ const BusinessSignupScreen = ({ navigation, route }) => {
       newErrors.email = 'כתובת אימייל לא תקינה';
     }
 
-    // בדיקת כתובת
-    if (!formData.address.trim()) {
-      newErrors.address = 'כתובת העסק היא שדה חובה';
+    // בדיקת כתובת ומיקום
+    if (!location || !location.coordinates) {
+      newErrors.location = 'יש לבחור מיקום מהרשימה';
+      setLocationError('יש לבחור מיקום מהרשימה');
     }
 
     // בדיקת קטגוריות
@@ -169,6 +173,17 @@ const BusinessSignupScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleLocationSelected = (locationData) => {
+    console.log('Selected location:', locationData);
+    setLocation(locationData);
+    setFormData(prev => ({
+      ...prev,
+      address: locationData.address
+    }));
+    // Clear any location error when valid location is selected
+    setLocationError(null);
+  };
+
   const generateRandomData = () => {
     const randomNum = Math.floor(Math.random() * 10000);
     return {
@@ -195,6 +210,7 @@ const BusinessSignupScreen = ({ navigation, route }) => {
       const user = await FirebaseApi.createUserWithEmailAndPassword(finalData.email, finalData.password);
 
       // Create business data object
+      const timestamp = new Date();
       const businessData = {
         businessId: user.uid,
         name: finalData.businessName,
@@ -203,20 +219,24 @@ const BusinessSignupScreen = ({ navigation, route }) => {
         businessPhone: finalData.businessPhone,
         email: finalData.email,
         address: finalData.address,
+        location: {
+          latitude: location.coordinates.latitude,
+          longitude: location.coordinates.longitude
+        },
         categories: finalData.selectedCategories,
         description: '',
         images: [],
         rating: 0,
         reviewsCount: 0,
-        // workingHours: {
-        //   sunday: { open: '09:00', close: '17:00', isOpen: true },
-        //   monday: { open: '09:00', close: '17:00', isOpen: true },
-        //   tuesday: { open: '09:00', close: '17:00', isOpen: true },
-        //   wednesday: { open: '09:00', close: '17:00', isOpen: true },
-        //   thursday: { open: '09:00', close: '17:00', isOpen: true },
-        //   friday: { open: '09:00', close: '14:00', isOpen: true },
-        //   saturday: { isOpen: false, open: '00:00', close: '00:00' }
-        // },
+        workingHours: {
+          sunday: { open: '09:00', close: '17:00', isOpen: true },
+          monday: { open: '09:00', close: '17:00', isOpen: true },
+          tuesday: { open: '09:00', close: '17:00', isOpen: true },
+          wednesday: { open: '09:00', close: '17:00', isOpen: true },
+          thursday: { open: '09:00', close: '17:00', isOpen: true },
+          friday: { open: '09:00', close: '14:00', isOpen: true },
+          saturday: { isOpen: false, open: '00:00', close: '00:00' }
+        },
         createdAt: FirebaseApi.getServerTimestamp(),
         updatedAt: FirebaseApi.getServerTimestamp(),
         status: 'active'
@@ -372,14 +392,15 @@ const BusinessSignupScreen = ({ navigation, route }) => {
 
             <View style={styles.inputContainer}>
               <Text style={styles.label}>📍 כתובת העסק</Text>
-              <TextInput
-                style={[styles.input, errors.address && styles.inputError]}
-                value={formData.address}
-                onChangeText={(text) => handleInputChange('address', text)}
-                placeholder="הכנס את כתובת העסק המלאה"
-                placeholderTextColor="#9ca3af"
-              />
-              {renderError('address')}
+              <LocationPicker onLocationSelected={handleLocationSelected} />
+              {locationError && (
+                <Text style={styles.errorText}>{locationError}</Text>
+              )}
+              {location && (
+                <Text style={styles.selectedAddress}>
+                  כתובת נבחרה: {location.address}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -724,6 +745,14 @@ const styles = StyleSheet.create({
   },
   modalButtonTextCancel: {
     color: '#64748b',
+  },
+  selectedAddress: {
+    fontSize: 14,
+    fontFamily: FontFamily["Assistant-Regular"],
+    color: '#475569',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    marginTop: 4,
   },
 });
 
