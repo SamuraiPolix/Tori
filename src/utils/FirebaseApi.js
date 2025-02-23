@@ -1957,6 +1957,102 @@ class FirebaseApi {
       return [];
     }
   }
+
+  // FCM Token methods
+  static async getFCMToken() {
+    return await messaging().getToken();
+  }
+
+  static async saveFCMToken(userId) {
+    try {
+      const token = await this.getFCMToken();
+      await firestore()
+        .collection('users')
+        .doc(userId)
+        .update({
+          fcmToken: token,
+          tokenUpdatedAt: this.getServerTimestamp()
+        });
+      return token;
+    } catch (error) {
+      console.error('Error saving FCM token:', error);
+      throw error;
+    }
+  }
+
+  static async removeFCMToken(userId) {
+    try {
+      await firestore()
+        .collection('users')
+        .doc(userId)
+        .update({
+          fcmToken: firestore.FieldValue.delete(),
+          tokenUpdatedAt: this.getServerTimestamp()
+        });
+    } catch (error) {
+      console.error('Error removing FCM token:', error);
+      throw error;
+    }
+  }
+
+  static onMessageReceived(callback) {
+    return messaging().onMessage(callback);
+  }
+
+  static onNotificationOpenedApp(callback) {
+    return messaging().onNotificationOpenedApp(callback);
+  }
+
+  static async getInitialNotification() {
+    return await messaging().getInitialNotification();
+  }
+
+  static async sendAppointmentApprovedNotification(appointment) {
+    try {
+      const userDoc = await firestore()
+        .collection('users')
+        .doc(appointment.userId)
+        .get();
+      
+      const userData = userDoc.data();
+      if (!userData?.fcmToken) return;
+
+      const businessDoc = await firestore()
+        .collection('businesses')
+        .doc(appointment.businessId)
+        .get();
+      
+      const businessData = businessDoc.data();
+      const appointmentDate = appointment.startTime.toDate();
+      const formattedDate = appointmentDate.toLocaleDateString();
+      const formattedTime = appointmentDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const notificationData = {
+        token: userData.fcmToken,
+        title: 'Appointment Approved! 🎉',
+        body: `Your appointment with ${businessData.businessName} on ${formattedDate} at ${formattedTime} has been approved.`,
+        data: {
+          type: 'APPOINTMENT_APPROVED',
+          appointmentId: appointment.id,
+          businessId: appointment.businessId
+        }
+      };
+
+      // Send to your cloud function or backend API that handles FCM sending
+      // You'll need to implement a cloud function for this
+      await firestore()
+        .collection('notifications')
+        .add({
+          ...notificationData,
+          userId: appointment.userId,
+          createdAt: this.getServerTimestamp(),
+          status: 'pending'
+        });
+    } catch (error) {
+      console.error('Error sending appointment approved notification:', error);
+      throw error;
+    }
+  }
 }
 
 export default FirebaseApi;
