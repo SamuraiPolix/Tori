@@ -39,6 +39,7 @@ const LocationPicker = ({ onLocationSelected }) => {
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         });
+        
       } catch (error) {
         console.error('Error getting location:', error);
         // Set default location (Tel Aviv) on error
@@ -72,35 +73,82 @@ const LocationPicker = ({ onLocationSelected }) => {
         }
       }
 
-      // Add "Israel" to the search query to improve results
-      const results = await Location.geocodeAsync(text + ", Israel");
-      if (results.length > 0) {
+      // Try different search variations to get more results
+      const searchQueries = [
+        `${text}, ישראל`,
+        `${text}`,
+        `${text} רחוב, ישראל`,
+      ];
+
+      let allResults = [];
+      for (const query of searchQueries) {
+        const results = await Location.geocodeAsync(query);
+        allResults = [...allResults, ...results];
+      }
+
+      // Remove duplicates based on coordinates
+      allResults = allResults.filter((result, index, self) =>
+        index === self.findIndex((r) => 
+          r.latitude === result.latitude && r.longitude === result.longitude
+        )
+      );
+
+      console.log('Number of results found:', allResults.length);
+
+      if (allResults.length > 0) {
         // Get full address for each result
         const detailedResults = await Promise.all(
-          results.slice(0, 5).map(async (result) => {
-            const [addressInfo] = await Location.reverseGeocodeAsync({
-              latitude: result.latitude,
-              longitude: result.longitude,
-            });
-            
-            const formattedAddress = [
-              addressInfo.street,
-              addressInfo.streetNumber,
-              addressInfo.city,
-              addressInfo.region,
-              "Israel"
-            ].filter(Boolean).join(', ');
+          allResults.slice(0, 10).map(async (result) => {
+            try {
+              const [addressInfo] = await Location.reverseGeocodeAsync(
+                {
+                  latitude: result.latitude,
+                  longitude: result.longitude,
+                },
+                {
+                  language: "he"
+                }
+              );
+              
+              const formattedAddress = [
+                addressInfo.street,
+                addressInfo.streetNumber,
+                addressInfo.city,
+                addressInfo.region,
+                "ישראל"
+              ].filter(Boolean).join(', ');
 
-            return {
-              ...result,
-              formattedAddress
-            };
+              console.log('Found address:', formattedAddress);
+
+              return {
+                ...result,
+                formattedAddress
+              };
+            } catch (error) {
+              console.error('Error getting address details:', error);
+              return null;
+            }
           })
         );
-        setSearchResults(detailedResults);
+
+        // Filter out any null results from errors
+        const validResults = detailedResults.filter(result => result !== null);
+        console.log('Number of valid results:', validResults.length);
+        
+        // Remove duplicates based on formatted address
+        const uniqueResults = validResults.filter((result, index, self) =>
+          index === self.findIndex((r) => 
+            r.formattedAddress === result.formattedAddress
+          )
+        );
+
+        setSearchResults(uniqueResults);
+      } else {
+        setSearchResults([]);
       }
     } catch (error) {
       console.error('Error searching address:', error);
+      setSearchResults([]);
     } finally {
       setLoading(false);
     }
@@ -135,17 +183,22 @@ const LocationPicker = ({ onLocationSelected }) => {
   };
 
   const getFormattedAddress = async (location) => {
-    const [addressInfo] = await Location.reverseGeocodeAsync({
-      latitude: location.latitude,
-      longitude: location.longitude,
-    });
+    const [addressInfo] = await Location.reverseGeocodeAsync(
+      {
+        latitude: location.latitude,
+        longitude: location.longitude,
+      },
+      {
+        language: "he"
+      }
+    );
 
     return [
       addressInfo.street,
       addressInfo.streetNumber,
       addressInfo.city,
       addressInfo.region,
-      "Israel"
+      "ישראל"
     ].filter(Boolean).join(', ');
   };
 
@@ -214,57 +267,61 @@ const LocationPicker = ({ onLocationSelected }) => {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    padding: 16,
+    width: '100%',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   input: {
     flex: 1,
-    height: 40,
-    borderWidth: 1,
-    borderColor: Color.grayscaleColorLightGray,
+    backgroundColor: '#f8fafc',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    backgroundColor: Color.grayscaleColorWhite,
-    fontFamily: FontFamily.assistant,
+    padding: 12,
+    fontSize: 16,
+    fontFamily: FontFamily["Assistant-Regular"],
+    color: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    height: 48,
   },
   loadingIndicator: {
     position: 'absolute',
     right: 12,
   },
   resultsContainer: {
-    backgroundColor: Color.grayscaleColorWhite,
+    backgroundColor: '#fff',
     borderRadius: 8,
-    marginBottom: 10,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    maxHeight: 300, // Increased height to show more results
+    overflow: 'scroll',
+    marginBottom: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   resultItem: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Color.grayscaleColorLightGray,
+    borderBottomColor: '#e2e8f0',
   },
   resultText: {
-    fontFamily: FontFamily.assistant,
+    fontSize: 16,
+    fontFamily: FontFamily["Assistant-Regular"],
+    color: '#1e293b',
     textAlign: 'right',
   },
   map: {
     width: '100%',
-    height: 300,
+    height: 200,
     borderRadius: 8,
-    marginBottom: 10,
-  },
-  helpText: {
-    fontFamily: FontFamily.assistant,
-    color: Color.grayscaleColorGray,
-    textAlign: 'center',
     marginTop: 8,
   },
 });
