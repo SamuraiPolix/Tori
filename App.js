@@ -6,6 +6,8 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { I18nManager } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
+import { useNotifications } from './src/hooks/useNotifications';
 
 // Disable Firebase v22 warnings for now
 LogBox.ignoreLogs([
@@ -25,6 +27,11 @@ LogBox.ignoreLogs([
 // Enable RTL
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
+
+// Set up background handler
+messaging().setBackgroundMessageHandler(async remoteMessage => {
+  console.log('Message handled in the background!', remoteMessage);
+});
 
 // Auth Screens
 import Welcome from "./src/screens/auth/Welcome";
@@ -75,12 +82,16 @@ const Stack = createNativeStackNavigator();
 
 const AppNavigator = () => {
   const [hideSplashScreen, setHideSplashScreen] = React.useState(true);
+  const navigationRef = React.useRef();
 
   const [fontsLoaded, error] = useFonts({
     "Assistant-ExtraLight": require("./src/assets/fonts/Assistant-ExtraLight.ttf"),
     "Assistant-Regular": require("./src/assets/fonts/Assistant-Regular.ttf"),
     "Assistant-Bold": require("./src/assets/fonts/Assistant-Bold.ttf"),
   });
+
+  // Set up notifications
+  useNotifications(navigationRef.current);
 
   if (!fontsLoaded && !error) {
     return null;
@@ -179,13 +190,15 @@ const AppNavigator = () => {
 };
 
 export default function App() {
+  const navigationRef = React.useRef();
+
   return (
-    <GestureHandlerRootView style={styles.container}>
-      <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
+      <GestureHandlerRootView style={styles.container}>
         <AppNavigator />
-      </NavigationContainer>
-      <StatusBar style="auto" />
-    </GestureHandlerRootView>
+        <StatusBar style="auto" />
+      </GestureHandlerRootView>
+    </NavigationContainer>
   );
 }
 
