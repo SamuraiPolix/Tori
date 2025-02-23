@@ -75,6 +75,3 @@ local.*
 *.swo
 android/app/src/main/AndroidManifest.xml
 app.json
-
-# not used for now
-functions/
