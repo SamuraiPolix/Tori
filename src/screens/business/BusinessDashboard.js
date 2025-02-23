@@ -249,10 +249,11 @@ const BusinessDashboard = ({ navigation, route }) => {
       await FirebaseApi.updateAppointmentStatus(appointmentId, newStatus);
       
       // Send notification to customer
-      await FirebaseApi.sendAppointmentStatusNotification(
-        appointmentId,
-        newStatus
-      );
+      // not needed for now - using cloud functions
+      // await FirebaseApi.sendAppointmentStatusNotification(
+      //   appointmentId,
+      //   newStatus
+      // );
 
       const currentUser = FirebaseApi.getCurrentUser();
       if (currentUser) {
