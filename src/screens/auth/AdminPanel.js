@@ -397,17 +397,14 @@ const AdminPanel = ({ navigation }) => {
         let categoriesUpdated = false;
         
         if (businessData.categories) {
-          const updatedCategories = businessData.categories.map(category => {
-            // If category is a number, convert to string name
-            if (typeof category === 'number') {
-              const matchingCategory = CATEGORIES.find(c => c.id === category);
-              return matchingCategory ? matchingCategory.name : category;
+          const updatedCategories = businessData.categories.map(categoryName => {
+            // If category is already a number, leave it as is
+            if (typeof categoryName === 'number') {
+              return categoryName;
             }
-            // If category is "מספרות", convert to "תספורת"
-            else if (category === 'מספרות') {
-              return 'תספורת';
-            }
-            return category;
+            // Convert category name to ID
+            const matchingCategory = CATEGORIES.find(c => c.name === categoryName);
+            return matchingCategory ? matchingCategory.id : categoryName;
           });
 
           // Only update if categories were actually changed

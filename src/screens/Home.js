@@ -32,6 +32,7 @@ import { Alert } from 'react-native';
 
 // Import Data
 import { NEARBY_SALONS, SALONS } from '../components/salons/salonsData';
+import { CATEGORIES } from '../components/categories/categoriesData';
 
 // Import Firebase API and user storage
 import { getUserData, storeUserData } from "../utils/userStorage";
@@ -223,14 +224,18 @@ const HomeScreen = ({ navigation }) => {
   };
 
   // Navigation Handlers
-  const handleCategoryPress = async (category) => {
+  const handleCategoryPress = async (categoryId) => {
     try {
-      console.log('Selected category:', category);
-      const categoryId = category.categoryId || category.id;
+      console.log('Selected category ID:', categoryId);
       const businesses = await FirebaseApi.getBusinessesByCategory(categoryId);
       console.log(`Found ${businesses?.length || 0} businesses for category ${categoryId}`);
+      
+      // Get category title from CATEGORIES
+      const category = CATEGORIES.find(c => c.id === categoryId);
+      const title = category ? category.title : 'קטגוריה';
+      
       navigation.navigate('FullList', {
-        title: category.title || category.name,
+        title: title,
         data: businesses,
         type: 'salon'
       });
@@ -312,7 +317,7 @@ const HomeScreen = ({ navigation }) => {
     
     try {
       // Get businesses from Firebase with all filters
-      const businesses = await FirebaseApi.searchBusinesses('', {
+      const businesses = await FirebaseApi.getBusinessesWithFilters({
         ...newFilters,
         userLocation: filters.userLocation // Add user location to filters
       });
