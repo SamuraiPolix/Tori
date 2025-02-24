@@ -177,6 +177,7 @@ const Profile = ({ navigation }) => {
               home: 'Home',
               appointments: 'MyAppointments',
               saved: 'Saved',
+              quick: 'QuickAppointments'
             };
             if (screens[tabId]) {
               navigation.navigate(screens[tabId]);
