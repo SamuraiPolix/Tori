@@ -871,8 +871,8 @@ class FirebaseApi {
   }
 
   static async signOut() {
-    await auth().signOut();
     await this.removeFCMToken(this.getCurrentUser().uid);
+    await auth().signOut();
   }
 
   static getCurrentUser() {
@@ -1493,19 +1493,21 @@ class FirebaseApi {
   }
 
   static async removeFCMToken(userId) {
+    console.log('Removing FCM token for user:', userId);
     var doc = await firestore()
       .collection('users')
-      .doc(userId)
-      .get();
+      .doc(userId);
 
-    if (!doc.exists){
+    var docData = await doc.get();
+    if (!docData.exists){
+      console.log('User not found, trying businesses')
       doc = await firestore()
         .collection('businesses')
-        .doc(userId)
-        .get();
+        .doc(userId);
+      docData = await doc.get();
     }
 
-    doc.update({
+    await doc.update({
       fcmToken: null,
       tokenUpdatedAt: this.getServerTimestamp()
     });

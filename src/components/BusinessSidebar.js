@@ -9,6 +9,7 @@ import {
   Easing,
 } from 'react-native';
 import { FontFamily, Color } from '../styles/GlobalStyles';
+import FirebaseApi from '../utils/FirebaseApi';
 
 const SIDEBAR_WIDTH = 280;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -50,12 +51,18 @@ const BusinessSidebar = ({
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     onClose();
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Welcome' }],
-    });
+    try {
+      await FirebaseApi.signOut();
+      // Reset navigation stack to Welcome screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   const handleClose = () => {
