@@ -56,7 +56,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
     // Validation rules
     switch(key) {
       case 'rating':
-        finalValue = Math.min(Math.max(Math.round(numValue), 1), 5);
+        finalValue = Math.min(Math.max(Math.round(numValue), 0), 5);
         break;
       case 'maxPrice':
       case 'distance':
@@ -219,7 +219,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
               </View>
               <Slider
                 style={styles.slider}
-                minimumValue={1}
+                minimumValue={0}
                 maximumValue={5}
                 step={1}
                 value={localFilters.rating}
