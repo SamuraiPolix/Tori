@@ -4,12 +4,28 @@ import { FontFamily } from '../../styles/GlobalStyles';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 
+const CATEGORIES = [
+  { id: 1, name: 'תספורת'},
+  { id: 2, name: 'ספא' },
+  { id: 3, name: 'ציפורניים' },
+  { id: 4, name: 'קוסמטיקה' },
+  { id: 5, name: 'איפור' },
+  { id: 6, name: 'שיער' },
+  { id: 7, name: 'טיפולי פנים' },
+  { id: 8, name: 'טיפולי גוף' },
+  { id: 9, name: 'הסרת שיער' },
+  { id: 10, name: 'עיסוי' },
+];
+
 const AdminPanel = ({ navigation }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationProgress, setMigrationProgress] = useState(0);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isUpdatingLocations, setIsUpdatingLocations] = useState(false);
+  const [isConvertingCategories, setIsConvertingCategories] = useState(false);
+  const [isUpdatingCategoriesCollection, setIsUpdatingCategoriesCollection] = useState(false);
 
   const createAppointmentsForBusiness = async (business, startDate, db) => {
     const businessData = business.data();
@@ -360,6 +376,138 @@ const AdminPanel = ({ navigation }) => {
     }
   };
 
+  const convertCategories = async () => {
+    try {
+      setIsConvertingCategories(true);
+      const db = firestore();
+      
+      // Get all businesses
+      const businessesSnapshot = await db.collection("businesses").get();
+      console.log(`Found ${businessesSnapshot.size} businesses to process...`);
+
+      // Process in batches
+      const batchSize = 500;
+      const batches = [];
+      let batch = db.batch();
+      let operationCount = 0;
+      let businessesProcessed = 0;
+
+      for (const doc of businessesSnapshot.docs) {
+        const businessData = doc.data();
+        let categoriesUpdated = false;
+        
+        if (businessData.categories) {
+          const updatedCategories = businessData.categories.map(categoryName => {
+            // If category is already a number, leave it as is
+            if (typeof categoryName === 'number') {
+              return categoryName;
+            }
+            // Convert category name to ID
+            const matchingCategory = CATEGORIES.find(c => c.name === categoryName);
+            return matchingCategory ? matchingCategory.id : categoryName;
+          });
+
+          // Only update if categories were actually changed
+          if (JSON.stringify(updatedCategories) !== JSON.stringify(businessData.categories)) {
+            batch.update(doc.ref, { categories: updatedCategories });
+            categoriesUpdated = true;
+            operationCount++;
+          }
+        }
+
+        if (categoriesUpdated && operationCount === batchSize) {
+          batches.push(batch.commit());
+          batch = db.batch();
+          operationCount = 0;
+        }
+        
+        businessesProcessed++;
+      }
+
+      // Commit any remaining operations
+      if (operationCount > 0) {
+        batches.push(batch.commit());
+      }
+
+      await Promise.all(batches);
+
+      Alert.alert(
+        "הצלחה",
+        `הושלם עדכון קטגוריות ל-${businessesProcessed} עסקים`
+      );
+    } catch (error) {
+      console.error("Error converting categories:", error);
+      Alert.alert(
+        "שגיאה",
+        "אירעה שגיאה בעדכון הקטגוריות"
+      );
+    } finally {
+      setIsConvertingCategories(false);
+    }
+  };
+
+  const updateCategoriesCollection = async () => {
+    try {
+      setIsUpdatingCategoriesCollection(true);
+      const db = firestore();
+
+      // First, get and delete all existing categories
+      const existingCategories = await db.collection("categories").get();
+      console.log(`Found ${existingCategories.size} existing categories to delete...`);
+
+      // Delete existing categories in batches
+      const batchSize = 500;
+      const deleteBatches = [];
+      let deleteBatch = db.batch();
+      let deleteCount = 0;
+
+      existingCategories.docs.forEach((doc) => {
+        deleteBatch.delete(doc.ref);
+        deleteCount++;
+
+        if (deleteCount === batchSize) {
+          deleteBatches.push(deleteBatch.commit());
+          deleteBatch = db.batch();
+          deleteCount = 0;
+        }
+      });
+
+      if (deleteCount > 0) {
+        deleteBatches.push(deleteBatch.commit());
+      }
+
+      // Wait for all deletes to complete
+      await Promise.all(deleteBatches);
+      console.log('All existing categories deleted');
+
+      // Now create new categories
+      const createBatch = db.batch();
+      for (const category of CATEGORIES) {
+        const categoryRef = db.collection("categories").doc(category.id.toString());
+        createBatch.set(categoryRef, {
+          categoryId: category.id,
+          name: category.name
+        });
+      }
+      
+      await createBatch.commit();
+      console.log('New categories created');
+
+      Alert.alert(
+        "הצלחה",
+        "הושלם עדכון אוסף הקטגוריות"
+      );
+    } catch (error) {
+      console.error("Error updating categories collection:", error);
+      Alert.alert(
+        "שגיאה",
+        "אירעה שגיאה בעדכון אוסף הקטגוריות"
+      );
+    } finally {
+      setIsUpdatingCategoriesCollection(false);
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Admin Panel</Text>
@@ -406,6 +554,43 @@ const AdminPanel = ({ navigation }) => {
           </Text>
           {isMigrating && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, isUpdatingLocations && styles.buttonDisabled]}
+          onPress={() => {
+            setIsUpdatingLocations(true);
+            navigation.navigate('UpdateLocations');
+          }}
+          disabled={isUpdatingLocations}>
+          <Text style={styles.buttonText}>
+            עדכון מיקומים לעסקים
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>ניהול קטגוריות</Text>
+        
+        <TouchableOpacity
+          style={[styles.button, isConvertingCategories && styles.buttonDisabled]}
+          onPress={convertCategories}
+          disabled={isConvertingCategories}>
+          <Text style={styles.buttonText}>
+            {isConvertingCategories ? 'מעדכן קטגוריות בעסקים...' : 'עדכון קטגוריות בעסקים'}
+          </Text>
+          {isConvertingCategories && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, isUpdatingCategoriesCollection && styles.buttonDisabled]}
+          onPress={updateCategoriesCollection}
+          disabled={isUpdatingCategoriesCollection}>
+          <Text style={styles.buttonText}>
+            {isUpdatingCategoriesCollection ? 'מעדכן אוסף קטגוריות...' : 'עדכון אוסף קטגוריות'}
+          </Text>
+          {isUpdatingCategoriesCollection && <ActivityIndicator color="#FFFFFF" style={styles.spinner} />}
+        </TouchableOpacity>
+
       </View>
 
       {isMigrating && (

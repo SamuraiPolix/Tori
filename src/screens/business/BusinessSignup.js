@@ -23,7 +23,7 @@ I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 
 const CATEGORIES = [
-  { id: 1, name: 'מספרות' },
+  { id: 1, name: 'תספורת' },
   { id: 2, name: 'ספא' },
   { id: 3, name: 'ציפורניים' },
   { id: 4, name: 'קוסמטיקה' },
