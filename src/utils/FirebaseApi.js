@@ -198,7 +198,7 @@ class FirebaseApi {
         },
         service: {
           id: data.serviceId,
-          name: data.serviceName || 'שם שירות לא זמין',
+          name: data.serviceName || 'שירות לא זמין',
           duration: data.serviceDuration || 0,
           price: data.servicePrice || 0
         }
@@ -509,61 +509,53 @@ class FirebaseApi {
 
   // Salon and Category methods
   static async getHaircutCategory() {
-    return { name: 'תספורת' };  // Just return the category name
+    const snapshot = await firestore()
+      .collection('categories')
+      .where('name', '==', 'תספורת')
+      .get();
+
+    if (snapshot.empty) return null;
+    const categoryData = snapshot.docs[0].data();
+    return {
+      id: snapshot.docs[0].id,
+      ...categoryData
+    };
   }
 
-  static async getBusinessesByCategory(categoryId, minRating = 0) {
+  static async getBusinessesByCategory(categoryId) {
     try {
-      if (!categoryId) {
-        console.error('Category ID is required');
-        return [];
-      }
-
       const snapshot = await firestore()
         .collection('businesses')
-        .where('categories', 'array-contains', categoryId)
+        .where('categories', 'array-contains', Number(categoryId))
         .get();
 
-      console.log(`Found ${snapshot.size} businesses for category ID ${categoryId}`);
-      
-      // Filter by rating in memory instead of in query to avoid needing composite index
-      const businesses = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(business => (business.rating || 0) >= minRating);
-
-      return businesses;
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
     } catch (error) {
       console.error('Error getting businesses by category:', error);
       return [];
     }
   }
 
-  static async getTopBusinesses(categoryId, limit = 10, minRating = 0) {
-    try {
-      if (!categoryId) {
-        console.error('Category ID is required');
-        return [];
-      }
+  static async getTopBusinesses(categoryId, limit = 10) {
+    console.log('Getting top businesses for category:', categoryId, 'limit:', limit);
+    const snapshot = await firestore()
+      .collection('businesses')
+      .where('categories', 'array-contains', categoryId)
+      .get();
 
-      const snapshot = await firestore()
-        .collection('businesses')
-        .where('categories', 'array-contains', categoryId)
-        .get();
-
-      // Sort and filter in memory instead of in query
-      const businesses = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(business => (business.rating || 0) >= minRating)
-        .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-        .slice(0, limit);
-
-      return businesses;
-    } catch (error) {
-      console.error('Error getting top businesses:', error);
-      return [];
-    }
+    return snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, limit);
   }
 
+  // Category methods
   static async getCategories() {
     const categoriesSnapshot = await firestore()
       .collection('categories')
@@ -1613,7 +1605,7 @@ class FirebaseApi {
       const notificationData = {
         token: userData.fcmToken,
         title: 'Appointment Approved! ',
-        body: `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} has been approved.`,
+        body: `Your appointment with ${businessData.businessName} on ${formattedDate} at ${formattedTime} has been approved.`,
         data: {
           type: 'APPOINTMENT_APPROVED',
           appointmentId: appointment.id,
@@ -1645,6 +1637,51 @@ class FirebaseApi {
       .get();
 
     return appointmentDoc.exists ? { id: appointmentDoc.id, ...appointmentDoc.data() } : null;
+  }
+
+  static async getAvailableSlots(businessId, date) {
+    const dateStr = date.toISOString().split('T')[0];
+    
+    const availableSlotsDoc = await firestore()
+      .collection('businesses')
+      .doc(businessId)
+      .collection('availableSlots')
+      .doc(dateStr)
+      .get();
+
+    if (!availableSlotsDoc.exists || !availableSlotsDoc.data()?.slots) {
+      return [];
+    }
+
+    const slotIds = availableSlotsDoc.data().slots;
+    const appointmentDocs = await Promise.all(
+      slotIds.map(id => 
+        firestore()
+          .collection('appointments')
+          .doc(id)
+          .get()
+      )
+    );
+
+    return appointmentDocs
+      .filter(doc => doc.exists && doc.data().status === 'available')
+      .map(doc => {
+        const data = doc.data();
+        const startTime = data.startTime.toDate();
+        return {
+          id: doc.id,
+          time: startTime,
+          formattedTime: startTime.toLocaleTimeString('he-IL', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }),
+          serviceName: data.serviceName,
+          servicePrice: data.servicePrice,
+          serviceDuration: data.serviceDuration
+        };
+      })
+      .sort((a, b) => a.time - b.time);
   }
 
   static async rescheduleAppointment(appointmentId, newDate) {
@@ -2158,25 +2195,34 @@ class FirebaseApi {
         .collection('businesses')
         .get();
 
-      const businesses = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      console.log('All businesses:', businesses);
-      console.log('First business data structure:', businesses[0]);
+      const businesses = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Handle the location field which is a GeoPoint in Firestore
+        const location = data.location ? {
+          latitude: data.location.latitude,
+          longitude: data.location.longitude
+        } : null;
+
+        return {
+          id: doc.id,
+          ...data,
+          location: location
+        };
+      });
+
       return businesses;
     } catch (error) {
-      console.error('Error getting all businesses:', error);
-      return [];
+      console.error('Error fetching businesses:', error);
+      throw error;
     }
   }
 
-  static async searchBusinesses(searchText, filters = null) {
+  static async searchBusinesses(searchText, filters = { rating: 0 }) {
     try {
       const db = firestore();
       const businessesRef = db.collection('businesses');
       const snapshot = await businessesRef.get();
-      
+
       // Convert to array with fullData flag
       let businesses = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -2195,9 +2241,9 @@ class FirebaseApi {
       }
 
       // Apply rating filter if provided
-      if (filters?.rating) {
+      if (filters?.rating !== undefined) {
         businesses = businesses.filter(business => 
-          business.rating >= filters.rating
+          (business.rating || 0) >= filters.rating
         );
       }
 
@@ -2206,38 +2252,6 @@ class FirebaseApi {
         businesses = businesses.filter(business => 
           business.priceLevel <= filters.price
         );
-      }
-
-      // Apply category filter if provided
-      if (filters?.categoryId) {
-        businesses = businesses.filter(business =>
-          business.categories?.includes(filters.categoryId)
-        );
-      }
-
-      // Apply distance filter if location is available
-      if (filters?.distance && filters?.userLocation) {
-        const { latitude: userLat, longitude: userLon } = filters.userLocation;
-        
-        businesses = businesses.filter(business => {
-          if (!business.location?.latitude || !business.location?.longitude) return false;
-          
-          // Calculate distance using Haversine formula
-          const R = 6371; // Earth's radius in kilometers
-          const lat1 = userLat * Math.PI / 180;
-          const lat2 = business.location.latitude * Math.PI / 180;
-          const dLat = (business.location.latitude - userLat) * Math.PI / 180;
-          const dLon = (business.location.longitude - userLon) * Math.PI / 180;
-
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1) * Math.cos(lat2) *
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-          
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const distance = R * c; // Distance in kilometers
-
-          return distance <= filters.distance;
-        });
       }
 
       // Sort by rating (highest first)

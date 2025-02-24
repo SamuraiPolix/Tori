@@ -74,6 +74,8 @@ import NotificationSettings from './src/screens/NotificationSettings';
 import About from './src/screens/About';
 import FullListScreen from './src/screens/FullListScreen';
 import QuickAppointments from './src/screens/QuickAppointments';
+import Map from './src/screens/Map';
+
 
 // Components
 import BusinessSidebar from "./src/components/BusinessSidebar";
@@ -165,6 +167,8 @@ const AppNavigator = () => {
       <Stack.Screen name="Saved" component={Saved} options={{ headerShown: false }} />
       <Stack.Screen name="PersonalDetails" component={PersonalDetails} options={{ headerShown: false }} />
       <Stack.Screen name="QuickAppointments" component={QuickAppointments} options={{ headerShown: false }} />
+      <Stack.Screen name="Map" component={Map} options={{ headerShown: false }} />
+
       <Stack.Screen
         name="NotificationSettings"
         component={NotificationSettings}

@@ -48,9 +48,9 @@ const SalonCard = ({ salon: business, onPress }) => {
     if (!distance && distance !== 0) return '';
     
     if (distance < 1) {
-      return `${(distance * 1000).toFixed(0)}מ'`;
+      return `${(distance * 1000).toFixed(0)} מ'`;
     }
-    return `${distance.toFixed(1)}ק"מ`;
+    return `${distance.toFixed(1)} ק"מ`;
   };
 
   return (
@@ -83,9 +83,9 @@ const SalonCard = ({ salon: business, onPress }) => {
             <Text style={styles.reviewsText}>({business.reviewsCount || 0} ביקורות)</Text>
           </View>
           {business.distance !== undefined && (
-            <View style={styles.locationContainer}>
-              <Ionicons name="location" size={16} color="#666666" />
-              <Text style={styles.location}>{formatDistance(business.distance)}</Text>
+            <View style={[styles.locationContainer, styles.searchResultDistance]}>
+              <Ionicons name="location" size={16} color={Color.primaryColorAmaranthPurple} />
+              <Text style={styles.distanceText}>{formatDistance(business.distance)}</Text>
             </View>
           )}
         </View>
@@ -167,6 +167,12 @@ const styles = StyleSheet.create({
     color: "#666666",
     textAlign: 'right',
   },
+  distanceText: {
+    fontSize: 14,
+    fontFamily: FontFamily.assistantRegular,
+    color: Color.primaryColorAmaranthPurple,
+    textAlign: 'right',
+  },
   favoriteButton: {
     position: 'absolute',
     top: 10,
@@ -183,6 +189,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  searchResultDistance: {
+    marginRight: 'auto',
+    paddingRight: 8,
   },
 });
 
