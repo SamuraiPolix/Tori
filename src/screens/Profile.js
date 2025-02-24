@@ -60,7 +60,11 @@ const Profile = ({ navigation }) => {
   const handleLogout = async () => {
     try {
       await FirebaseApi.signOut();
-      navigation.navigate('Login');
+      // Reset navigation stack to Welcome screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -154,37 +158,21 @@ const Profile = ({ navigation }) => {
               style={styles.menuItem}
               onPress={() => handleMenuPress(item.id)}
             >
-              <View style={styles.menuContent}>
-                <Text style={styles.menuIcon}>{item.icon}</Text>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-              </View>
-              <Ionicons name="chevron-back" size={24} color={Color.grayscaleColorSpanishGray} />
+              <Text style={styles.menuIcon}>{item.icon}</Text>
+              <Text style={styles.menuTitle}>{item.title}</Text>
+              <Ionicons name="chevron-back" size={24} color={Color.grayscaleColor600} />
             </TouchableOpacity>
           ))}
+          {/* Logout Button */}
+          <TouchableOpacity 
+            style={styles.logoutButton} 
+            onPress={() => handleMenuPress('logout')}
+          >
+            <Text style={styles.logoutText}>התנתקות</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} onPress={() => handleMenuPress('logout')}>
-          <Text style={styles.logoutText}>התנתקות</Text>
-          <Ionicons name="log-out-outline" size={24} color={Color.primaryColorAmaranthPurple} />
-        </TouchableOpacity>
       </ScrollView>
-      <BottomNavigation 
-        activeTab="profile"
-        onTabPress={(tabId) => {
-          if (tabId !== 'profile') {
-            const screens = {
-              home: 'Home',
-              appointments: 'MyAppointments',
-              saved: 'Saved',
-              quick: 'QuickAppointments'
-            };
-            if (screens[tabId]) {
-              navigation.navigate(screens[tabId]);
-            }
-          }
-        }}
-      />
+      <BottomNavigation navigation={navigation} currentScreen="profile" />
     </SafeAreaView>
   );
 };
@@ -309,27 +297,25 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   menuTitle: {
+    flex: 1,
     fontSize: 16,
     fontFamily: FontFamily.assistantRegular,
-    color: Color.grayscaleColorBlack,
+    color: Color.grayscaleColor900,
+    marginRight: 12,
   },
   logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
+    marginTop: 20,
     marginHorizontal: 16,
-    marginBottom: 32,
-    backgroundColor: Color.grayscaleColorWhite,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Color.primaryColorAmaranthPurple,
+    paddingVertical: 12,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 100, // Add space for bottom navigation
   },
   logoutText: {
+    color: '#DC2626',
     fontSize: 16,
     fontFamily: FontFamily.assistantBold,
-    color: Color.primaryColorAmaranthPurple,
-    marginRight: 8,
   },
   loadingContainer: {
     flex: 1,
