@@ -1841,7 +1841,7 @@ class FirebaseApi {
           .collection('users')
           .doc(customerId)
           .get();
-
+        
         if (!userDoc.exists) return null;
 
         const customerAppointments = appointmentsSnapshot.docs
@@ -2194,20 +2194,29 @@ class FirebaseApi {
         .collection('businesses')
         .get();
 
-      const businesses = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      console.log('All businesses:', businesses);
-      console.log('First business data structure:', businesses[0]);
+      const businesses = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Handle the location field which is a GeoPoint in Firestore
+        const location = data.location ? {
+          latitude: data.location.latitude,
+          longitude: data.location.longitude
+        } : null;
+
+        return {
+          id: doc.id,
+          ...data,
+          location: location
+        };
+      });
+
       return businesses;
     } catch (error) {
-      console.error('Error getting all businesses:', error);
-      return [];
+      console.error('Error fetching businesses:', error);
+      throw error;
     }
   }
 
-  static async searchBusinesses(searchText, filters = null) {
+  static async searchBusinesses(searchText, filters = { rating: 0 }) {
     try {
       const db = firestore();
       const businessesRef = db.collection('businesses');
@@ -2231,9 +2240,9 @@ class FirebaseApi {
       }
 
       // Apply rating filter if provided
-      if (filters?.rating) {
+      if (filters?.rating !== undefined) {
         businesses = businesses.filter(business => 
-          business.rating >= filters.rating
+          (business.rating || 0) >= filters.rating
         );
       }
 

@@ -71,6 +71,13 @@ const FullListView = ({ title, data, type, filters }) => {
                   ({item.reviewsCount || '0'} ביקורות)
                 </Text>
               </View>
+              {item.distance !== undefined && (
+                <View style={styles.distanceContainer}>
+                  <Text style={styles.distance}>
+                    {item.distance.toFixed(1)} ק"מ
+                  </Text>
+                </View>
+              )}
             </>
           )}
         </View>
@@ -152,26 +159,37 @@ const styles = StyleSheet.create({
   },
   itemAddress: {
     fontSize: 14,
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.regular,
     color: '#64748B',
     marginBottom: 4,
     textAlign: 'right',
   },
   ratingContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   rating: {
     fontSize: 14,
     fontFamily: FontFamily["Assistant-SemiBold"],
-    color: '#F59E0B',
-    marginLeft: 4,
+    color: '#F7DC6F',
+    marginRight: 4,
   },
   reviews: {
     fontSize: 14,
-    fontFamily: FontFamily["Assistant-Regular"],
+    fontFamily: FontFamily.regular,
     color: '#64748B',
+  },
+  distanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  distance: {
+    fontSize: 14,
+    fontFamily: FontFamily["Assistant-Regular"],
+    color: '#3B82F6',
   },
   emptyContainer: {
     flex: 1,
@@ -215,7 +233,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.medium,
     color: '#334155',
     textAlign: 'right',
-  }
+  },
 });
 
 export default FullListView;
