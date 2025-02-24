@@ -3,7 +3,7 @@ import { SafeAreaView, StyleSheet } from 'react-native';
 import FullListView from '../components/common/FullListView';
 
 const FullListScreen = ({ route }) => {
-  const { title, data, type } = route.params;
+  const { title, data, type, filters } = route.params;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -11,6 +11,7 @@ const FullListScreen = ({ route }) => {
         title={title}
         data={data}
         type={type}
+        filters={filters}
       />
     </SafeAreaView>
   );

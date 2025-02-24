@@ -83,7 +83,7 @@ const SalonCard = ({ salon: business, onPress }) => {
             <Text style={styles.reviewsText}>({business.reviewsCount || 0} ביקורות)</Text>
           </View>
           {business.distance !== undefined && (
-            <View style={styles.locationContainer}>
+            <View style={[styles.locationContainer, styles.searchResultDistance]}>
               <Ionicons name="location" size={16} color={Color.primaryColorAmaranthPurple} />
               <Text style={styles.distanceText}>{formatDistance(business.distance)}</Text>
             </View>
@@ -189,6 +189,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  searchResultDistance: {
+    marginRight: 'auto',
+    paddingRight: 8,
   },
 });
 

@@ -2202,28 +2202,17 @@ class FirebaseApi {
           longitude: data.location.longitude
         } : null;
 
-        // Log categories array for debugging
-        console.log(`Business ${data.name} categories:`, data.categories);
-
         return {
           id: doc.id,
           ...data,
-          location, // Override the GeoPoint with our parsed location
-          categories: data.categories // Add categories to the log
+          location: location
         };
       });
-      
-      console.log('All businesses with parsed locations:', businesses.map(b => ({
-        id: b.id,
-        name: b.name,
-        location: b.location,
-        categories: b.categories
-      })));
-      
+
       return businesses;
     } catch (error) {
-      console.error('Error getting all businesses:', error);
-      return [];
+      console.error('Error fetching businesses:', error);
+      throw error;
     }
   }
 

@@ -18,6 +18,8 @@ import { Image } from "expo-image";
 import { FontFamily, Color } from "../styles/GlobalStyles";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from 'expo-location';
+import { DEFAULT_LOCATION, isLocationInIsrael } from '../constants/locations';
+import { Alert } from 'react-native';
 
 // Import Components
 import CategoriesList from '../components/categories/CategoriesList';
@@ -27,7 +29,6 @@ import NearbySalonsList from '../components/salons/NearbySalonsList';
 import BottomNavigation from '../components/common/BottomNavigation';
 import SalonDetails from '../components/salons/SalonDetails';
 import FilterModal from '../components/filters/FilterModal';
-import { Alert } from 'react-native';
 
 // Import Data
 import { NEARBY_SALONS, SALONS } from '../components/salons/salonsData';
@@ -68,6 +69,7 @@ const HomeScreen = ({ navigation }) => {
     categoryId: undefined
   });
   const [filteredSalons, setFilteredSalons] = React.useState([]);
+  const [userLocation, setUserLocation] = React.useState(null);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -118,6 +120,48 @@ const HomeScreen = ({ navigation }) => {
     if (Platform.OS === 'android') {
       StatusBar.setBackgroundColor(Color.primaryColorAmaranthPurple);
     }
+  }, []);
+
+  React.useEffect(() => {
+    const askForLocationPermission = async () => {
+      try {
+        console.log('1. Requesting location permission...');
+        // Add a small delay to ensure component is mounted
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        console.log('2. Permission status:', status);
+        
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          
+          // Check if location is in Israel
+          if (isLocationInIsrael(location.coords.latitude, location.coords.longitude)) {
+            console.log('📍 Using device location:', location.coords);
+            setUserLocation(location.coords);
+          } else {
+            console.log('📍 Location outside Israel, using default location (Azrieli Mall Tel Aviv):', DEFAULT_LOCATION);
+            setUserLocation(DEFAULT_LOCATION);
+          }
+        } else {
+          console.log('📍 Location permission denied, using default location:', DEFAULT_LOCATION);
+          setUserLocation(DEFAULT_LOCATION);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+        console.log('📍 Error getting location, using default location:', DEFAULT_LOCATION);
+        setUserLocation(DEFAULT_LOCATION);
+      }
+    };
+    
+    // Run the permission request after component mount
+    const timeoutId = setTimeout(() => {
+      askForLocationPermission();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const formatDistance = (min, max) => {
@@ -231,6 +275,18 @@ const HomeScreen = ({ navigation }) => {
 
       if (businesses) {
         const filteredBusinesses = businesses.filter(business => {
+          // Calculate distance
+          if (business.location && userLocation) {
+            const distance = getDistance(userLocation, business.location) / 1000; // Convert to km
+            business.distance = distance;
+            
+            // Distance filter
+            if (distance > newFilters.distance) {
+              console.log(`Business ${business.name} filtered out by distance: ${distance} > ${newFilters.distance}`);
+              return false;
+            }
+          }
+
           // Rating filter
           if (business.rating < newFilters.rating) {
             console.log(`Business ${business.name} filtered out by rating: ${business.rating} < ${newFilters.rating}`);
@@ -355,6 +411,15 @@ const HomeScreen = ({ navigation }) => {
               onSeeAllPress={() => navigation.navigate('Categories')}
             />
           </View>
+
+          {/* Map Button */}
+          <TouchableOpacity 
+            style={styles.mapButton}
+            onPress={() => navigation.navigate('Map')}
+          >
+            <Ionicons name="map-outline" size={24} color={Color.primaryColorAmaranthPurple} />
+            <Text style={styles.mapButtonText}>הצג עסקים על המפה</Text>
+          </TouchableOpacity>
 
           {/* Top Rated Salons */}
           <SalonsList 
@@ -495,6 +560,30 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 16,
     textAlign: 'right',
+  },
+  mapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  mapButtonText: {
+    fontSize: 16,
+    fontFamily: FontFamily.assistantSemiBold,
+    color: Color.primaryColorAmaranthPurple,
+    marginRight: 8,
   },
 });
 
