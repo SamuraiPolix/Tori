@@ -89,46 +89,137 @@ const QuickAppointments = ({ navigation }) => {
     }
   }, [selectedCategory]);
 
-  const findAvailableAppointments = (businessId, date, appointments) => {
-    console.log(`Finding available appointments for business ${businessId} on date ${date}`);
-    console.log('Raw appointments:', appointments);
-    
-    if (!appointments) return { available: [] };
-    
-    const selectedDateObj = new Date(date);
-    
-    // Set fixed business hours
-    const startTime = new Date(selectedDateObj);
-    startTime.setHours(7, 0, 0, 0); // 7:00 AM
-    
-    const endTime = new Date(selectedDateObj);
-    endTime.setHours(21, 0, 0, 0); // 9:00 PM
-
-    console.log('Filtering appointments between:', 
-      `${startTime.getHours()}:${startTime.getMinutes()} and ${endTime.getHours()}:${endTime.getMinutes()}`
-    );
-
-    const availableSlots = appointments.filter(appointment => {
-      const appointmentTime = appointment.startTime?.toDate?.();
-      if (!appointmentTime) {
-        console.log('Appointment has no valid time:', appointment);
-        return false;
+  const findAvailableAppointments = async (businessId, date, appointments) => {
+    try {
+      console.log(`Finding available appointments for business ${businessId} on date ${date}`);
+      
+      if (!appointments) {
+        console.log('No appointments provided');
+        return { available: [] };
       }
       
-      const isInRange = appointmentTime >= startTime && appointmentTime <= endTime;
-      if (appointmentTime) {
-        console.log('Appointment time:', 
-          `${appointmentTime.getHours()}:${appointmentTime.getMinutes()}`,
-          'in range:', isInRange
-        );
+      // Get all services for this business
+      const business = businesses.find(b => b.id === businessId);
+      if (!business) {
+        console.log('Business not found:', businessId);
+        return { available: [] };
       }
-      return isInRange;
-    });
 
-    console.log('Found available slots:', availableSlots.length);
-    return {
-      available: availableSlots
-    };
+      if (!business.services || !Array.isArray(business.services) || business.services.length === 0) {
+        console.log('No services found for business:', businessId);
+        return { available: [] };
+      }
+
+      const selectedDateObj = new Date(date);
+      
+      // Get business hours for the selected day
+      const dayOfWeek = selectedDateObj.getDay();
+      const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const workingHours = business.workingHours?.[daysMap[dayOfWeek]];
+
+      if (!workingHours?.isOpen) {
+        console.log('Business is closed on this day');
+        return { available: [] };
+      }
+
+      // Parse business hours
+      const [openHour, openMinute] = (workingHours.open || '07:00').split(':').map(Number);
+      const [closeHour, closeMinute] = (workingHours.close || '21:00').split(':').map(Number);
+
+      // Set business opening time
+      const businessOpen = new Date(selectedDateObj);
+      businessOpen.setHours(openHour, openMinute, 0, 0);
+
+      // Set business closing time
+      const businessClose = new Date(selectedDateObj);
+      businessClose.setHours(closeHour, closeMinute, 0, 0);
+
+      // Get current time if it's today
+      const now = new Date();
+      const isToday = selectedDateObj.toDateString() === now.toDateString();
+      
+      // Set start time to the later of business opening or current time (if today)
+      const startTime = new Date(
+        isToday ? 
+          Math.max(businessOpen.getTime(), now.getTime()) : 
+          businessOpen.getTime()
+      );
+
+      // Set end time to business closing time
+      const endTime = businessClose;
+
+      console.log('Business hours:', `${businessOpen.toLocaleTimeString()} - ${businessClose.toLocaleTimeString()}`);
+      console.log('Actual search range:', `${startTime.toLocaleTimeString()} - ${endTime.toLocaleTimeString()}`);
+
+      // Convert booked appointments to time ranges
+      const bookedRanges = appointments.map(booking => {
+        const bookingTime = booking.startTime.toDate();
+        const bookingEndTime = new Date(bookingTime.getTime() + (booking.serviceDuration || 30) * 60000);
+        return {
+          start: bookingTime,
+          end: bookingEndTime,
+          service: booking.serviceName
+        };
+      });
+
+      console.log('Booked ranges:', bookedRanges.map(range => 
+        `${range.start.toLocaleTimeString()}-${range.end.toLocaleTimeString()} (${range.service})`
+      ));
+
+      // Generate all possible slots
+      const slots = [];
+      const slotDuration = 30; // Default slot duration in minutes
+      let currentTime = new Date(startTime);
+
+      while (currentTime < endTime) {
+        business.services.forEach(service => {
+          const serviceDuration = service.duration || 30;
+          const serviceEndTime = new Date(currentTime.getTime() + serviceDuration * 60000);
+          
+          // Skip if service would end after business hours
+          if (serviceEndTime > endTime) {
+            return;
+          }
+
+          // Check if this slot conflicts with any booked appointments
+          const hasConflict = bookedRanges.some(range => {
+            const slotOverlaps = (
+              (currentTime >= range.start && currentTime < range.end) || // Start overlaps
+              (serviceEndTime > range.start && serviceEndTime <= range.end) || // End overlaps
+              (currentTime <= range.start && serviceEndTime >= range.end) // Encompasses
+            );
+            
+            if (slotOverlaps) {
+              console.log(`Slot ${currentTime.toLocaleTimeString()} conflicts with booking at ${range.start.toLocaleTimeString()} for ${range.service}`);
+            }
+            
+            return slotOverlaps;
+          });
+
+          if (!hasConflict) {
+            // Convert time to minutes since midnight
+            const minutesSinceMidnight = currentTime.getHours() * 60 + currentTime.getMinutes();
+            console.log(`Adding slot at ${currentTime.toLocaleTimeString()} for ${service.name}`);
+            slots.push({
+              startTimeMinutes: minutesSinceMidnight,
+              serviceName: service.name,
+              servicePrice: service.price,
+              serviceDuration: serviceDuration,
+              businessId: businessId
+            });
+          }
+        });
+
+        // Move to next slot
+        currentTime = new Date(currentTime.getTime() + slotDuration * 60000);
+      }
+
+      console.log(`Found ${slots.length} available slots for business ${businessId}`);
+      return { available: slots };
+    } catch (error) {
+      console.error('Error in findAvailableAppointments:', error);
+      return { available: [] };
+    }
   };
 
   const fetchAppointmentsForSelectedDate = async () => {
@@ -150,6 +241,14 @@ const QuickAppointments = ({ navigation }) => {
         console.error('Error getting location:', error);
       }
 
+      if (!businesses || businesses.length === 0) {
+        console.log('No businesses available');
+        setAllAppointments([]);
+        setSortedAppointments([]);
+        setLoading(false);
+        return;
+      }
+
       console.log('Fetching appointments for businesses:', businesses.length);
       
       const appointmentsPromises = businesses.map(business => 
@@ -160,12 +259,16 @@ const QuickAppointments = ({ navigation }) => {
 
       // Create a Set to track unique appointment IDs
       const seenAppointments = new Set();
+      const availableAppointments = [];
 
-      const availableAppointments = allAppointments.flatMap((appointments, index) => {
+      for (let index = 0; index < businesses.length; index++) {
         const business = businesses[index];
+        const appointments = allAppointments[index];
+        
         console.log(`Processing appointments for business: ${business.name}`);
         
-        const { available } = findAvailableAppointments(business.id, selectedDate, appointments);
+        const result = await findAvailableAppointments(business.id, selectedDate, appointments);
+        const available = result?.available || [];
         console.log(`Found ${available.length} available appointments for ${business.name}`);
 
         // Calculate distance if we have both user location and business location
@@ -183,32 +286,33 @@ const QuickAppointments = ({ navigation }) => {
             !userLocation ? 'No user location' : 'No business location');
         }
 
-        return available
-          .filter(slot => {
-            const appointmentKey = `${business.id}-${slot.startTime?.toDate?.().getTime()}`;
-            if (seenAppointments.has(appointmentKey)) {
-              console.log('Duplicate appointment found:', appointmentKey);
-              return false;
-            }
+        // Process each available slot
+        available.forEach(slot => {
+          const appointmentKey = `${business.id}-${slot.startTimeMinutes}-${slot.serviceName}`;
+          if (!seenAppointments.has(appointmentKey)) {
             seenAppointments.add(appointmentKey);
-            return true;
-          })
-          .map(slot => ({
-            ...slot,
-            businessName: business.name,
-            businessId: business.id,
-            rating: business.rating,
-            distance: distance,
-            businessImage: business.images?.[0]
-          }));
-      });
+            availableAppointments.push({
+              ...slot,
+              businessName: business.name,
+              businessId: business.id,
+              rating: business.rating,
+              distance: distance,
+              businessImage: business.images?.[0]
+            });
+          } else {
+            console.log('Duplicate appointment found:', appointmentKey);
+          }
+        });
+      }
 
-      console.log('Final available appointments:', availableAppointments);
+      console.log('Final available appointments:', availableAppointments.length , availableAppointments);
       setAllAppointments(availableAppointments);
       handleSortChange(sortBy);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching appointments for selected date:', error);
+      setAllAppointments([]);
+      setSortedAppointments([]);
       setLoading(false);
     }
   };
@@ -278,16 +382,18 @@ const QuickAppointments = ({ navigation }) => {
     
     console.log('Sorting appointments by:', sortType);
     console.log('Before sort:', appointments.map(a => ({
-      time: a.startTime?.toDate?.()?.getTime(),
+      time: a.startTimeMinutes,
       distance: a.distance
     })));
 
     const sorted = [...appointments].sort((a, b) => {
       if (sortType === 'time') {
-        const timeA = a.startTime?.toDate?.()?.getTime() || 0;
-        const timeB = b.startTime?.toDate?.()?.getTime() || 0;
-        return timeA - timeB;
+        // Earlier times should come first
+        const timeA = a.startTimeMinutes || 0;
+        const timeB = b.startTimeMinutes || 0;
+        return timeA - timeB; // This will put earlier times first
       } else if (sortType === 'distance') {
+        // Closer distances should come first
         // Put null/undefined distances at the end
         if (!a.distance && !b.distance) return 0;
         if (!a.distance) return 1;
@@ -298,8 +404,8 @@ const QuickAppointments = ({ navigation }) => {
         
         if (Math.abs(distanceA - distanceB) < 0.1) {
           // If distances are very close, sort by time
-          const timeA = a.startTime?.toDate?.()?.getTime() || 0;
-          const timeB = b.startTime?.toDate?.()?.getTime() || 0;
+          const timeA = a.startTimeMinutes || 0;
+          const timeB = b.startTimeMinutes || 0;
           return timeA - timeB;
         }
         
@@ -309,7 +415,7 @@ const QuickAppointments = ({ navigation }) => {
     });
 
     console.log('After sort:', sorted.map(a => ({
-      time: a.startTime?.toDate?.()?.getTime(),
+      time: a.startTimeMinutes,
       distance: a.distance
     })));
 
@@ -352,16 +458,21 @@ const QuickAppointments = ({ navigation }) => {
 
   const renderAppointmentCard = ({ item }) => {
     console.log('Rendering appointment:', item);
-    if (!item || !item.startTime) {
+    if (!item || !item.startTimeMinutes) {
       console.log('Invalid appointment data:', item);
       return null;
     }
 
-    const appointmentTime = item.startTime.toDate?.();
-    if (!appointmentTime) {
-      console.log('Invalid appointment time:', item.startTime);
+    const appointmentTime = new Date();
+    if (!item.startTimeMinutes) {
+      console.log('Invalid appointment time minutes:', item.startTimeMinutes);
       return null;
     }
+
+    // Convert minutes to hours and minutes
+    const hours = Math.floor(item.startTimeMinutes / 60);
+    const minutes = item.startTimeMinutes % 60;
+    appointmentTime.setHours(hours, minutes, 0, 0);
 
     const formattedDate = appointmentTime.toLocaleDateString('he-IL', {
       weekday: 'long',
