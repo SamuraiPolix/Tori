@@ -8,16 +8,39 @@ import {
   I18nManager,
   ScrollView,
   Pressable,
-  TextInput
+  TextInput,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { Color, FontFamily } from '../../styles/GlobalStyles';
 import { CATEGORIES } from '../categories/categoriesData';
+import * as Location from 'expo-location';
 
 // קונפיגורציה של RTL
 I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
+
+// Default location (Azrieli Mall)
+const DEFAULT_LOCATION = {
+  latitude: 32.0745963,
+  longitude: 34.7918675,
+};
+
+// Israel boundaries
+const ISRAEL_BOUNDS = {
+  north: 33.33,    // Northern boundary
+  south: 29.49,    // Southern boundary
+  west: 34.23,     // Western boundary
+  east: 35.90      // Eastern boundary
+};
+
+const isLocationInIsrael = (coords) => {
+  return coords.latitude >= ISRAEL_BOUNDS.south &&
+         coords.latitude <= ISRAEL_BOUNDS.north &&
+         coords.longitude >= ISRAEL_BOUNDS.west &&
+         coords.longitude <= ISRAEL_BOUNDS.east;
+};
 
 const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) => {
   const formatDistance = useCallback((value) => {
@@ -56,7 +79,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
     // Validation rules
     switch(key) {
       case 'rating':
-        finalValue = Math.min(Math.max(Math.round(numValue), 1), 5);
+        finalValue = Math.min(Math.max(Math.round(numValue), 0), 5);
         break;
       case 'maxPrice':
       case 'distance':
@@ -73,6 +96,63 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
     const finalValue = key === 'rating' ? Math.round(value) : value;
     setFilters(prev => ({ ...prev, [key]: finalValue }));
   }, [setFilters]);
+
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [isUsingDefaultLocation, setIsUsingDefaultLocation] = useState(false);
+
+  // Check location permission and get user location
+  useEffect(() => {
+    const getUserLocation = async () => {
+      try {
+        setIsLoadingLocation(true);
+        setLocationError(null);
+        setIsUsingDefaultLocation(false);
+
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('נדרשת הרשאת מיקום לסינון לפי מרחק');
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({});
+        
+        // Check if location is in Israel
+        if (!isLocationInIsrael(location.coords)) {
+          console.log('Location outside Israel, using default Azrieli mall location');
+          setUserLocation(DEFAULT_LOCATION);
+          setIsUsingDefaultLocation(true);
+        } else {
+          setUserLocation({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          });
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+        // Use default location on error
+        setUserLocation(DEFAULT_LOCATION);
+        setIsUsingDefaultLocation(true);
+      } finally {
+        setIsLoadingLocation(false);
+      }
+    };
+
+    if (visible) {
+      getUserLocation();
+    }
+  }, [visible]);
+
+  // Update parent filters with user location
+  useEffect(() => {
+    if (userLocation) {
+      setFilters(prev => ({
+        ...prev,
+        userLocation
+      }));
+    }
+  }, [userLocation, setFilters]);
 
   // יצירת מערך של 7 ימים קדימה
   const nextWeekDays = useMemo(() => {
@@ -177,17 +257,28 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
             {/* Distance Filter */}
             <View style={styles.filterSection}>
               <View style={styles.filterTitleContainer}>
-                <Text style={styles.filterTitle}>מרחק</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.numericInput}
-                    value={String(localFilters.distance)}
-                    onChangeText={(value) => handleNumericInput('distance', value)}
-                    keyboardType="numeric"
-                    maxLength={3}
-                  />
-                  <Text style={styles.unitText}>ק"מ</Text>
-                </View>
+                <Text style={styles.filterTitle}>
+                  <Ionicons name="location" size={20} color={Color.primaryColorAmaranthPurple} /> מרחק
+                </Text>
+                {isLoadingLocation ? (
+                  <ActivityIndicator color={Color.primaryColorAmaranthPurple} size="small" />
+                ) : locationError ? (
+                  <Text style={styles.errorText}>{locationError}</Text>
+                ) : !userLocation ? (
+                  <Text style={styles.warningText}>ממתין למיקום...</Text>
+                ) : (
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      style={styles.numericInput}
+                      value={String(localFilters.distance)}
+                      onChangeText={(value) => handleNumericInput('distance', value)}
+                      keyboardType="numeric"
+                      maxLength={3}
+                      editable={!!userLocation}
+                    />
+                    <Text style={styles.unitText}>ק"מ</Text>
+                  </View>
+                )}
               </View>
               <Slider
                 style={styles.slider}
@@ -199,7 +290,20 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
                 minimumTrackTintColor={Color.primaryColorAmaranthPurple}
                 maximumTrackTintColor="#D3D3D3"
                 thumbTintColor={Color.primaryColorAmaranthPurple}
+                enabled={!!userLocation && !locationError}
               />
+              {userLocation && (
+                <Text style={styles.locationStatus}>
+                  <Ionicons 
+                    name="checkmark-circle" 
+                    size={16} 
+                    color={Color.successColor} 
+                  /> 
+                  {isUsingDefaultLocation 
+                    ? 'משתמש במיקום ברירת מחדל (עזריאלי ת"א)'
+                    : 'המיקום שלך זמין'}
+                </Text>
+              )}
             </View>
 
             {/* Rating Filter */}
@@ -219,7 +323,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters, onApplyFilters }) 
               </View>
               <Slider
                 style={styles.slider}
-                minimumValue={1}
+                minimumValue={0}
                 maximumValue={5}
                 step={1}
                 value={localFilters.rating}
@@ -569,6 +673,26 @@ const styles = StyleSheet.create({
     color: Color.primaryColorAmaranthPurple,
     fontFamily: FontFamily.regular,
     fontSize: 14,
+  },
+  errorText: {
+    color: Color.errorColor,
+    fontSize: 12,
+    fontFamily: FontFamily.primaryFontRegular,
+    marginRight: 8,
+  },
+  warningText: {
+    color: Color.warningColor,
+    fontSize: 12,
+    fontFamily: FontFamily.primaryFontRegular,
+    marginRight: 8,
+  },
+  locationStatus: {
+    fontSize: 12,
+    color: Color.successColor,
+    fontFamily: FontFamily.primaryFontRegular,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 10,
   },
 });
 
