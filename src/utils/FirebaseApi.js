@@ -512,51 +512,55 @@ class FirebaseApi {
     return { name: 'תספורת' };  // Just return the category name
   }
 
-  static async getBusinessesByCategory(categoryId) {
+  static async getBusinessesByCategory(categoryId, minRating = 0) {
     try {
       if (!categoryId) {
         console.error('Category ID is required');
         return [];
       }
-      console.log('Getting businesses for category ID:', categoryId);
+
       const snapshot = await firestore()
         .collection('businesses')
         .where('categories', 'array-contains', categoryId)
         .get();
 
       console.log(`Found ${snapshot.size} businesses for category ID ${categoryId}`);
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      
+      // Filter by rating in memory instead of in query to avoid needing composite index
+      const businesses = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(business => (business.rating || 0) >= minRating);
+
+      return businesses;
     } catch (error) {
       console.error('Error getting businesses by category:', error);
-      throw error;
+      return [];
     }
   }
 
-  static async getTopBusinesses(categoryId, limit = 10) {
+  static async getTopBusinesses(categoryId, limit = 10, minRating = 0) {
     try {
       if (!categoryId) {
         console.error('Category ID is required');
         return [];
       }
-      console.log('Getting top businesses for category ID:', categoryId);
+
       const snapshot = await firestore()
         .collection('businesses')
         .where('categories', 'array-contains', categoryId)
-        .orderBy('rating', 'desc')
-        .limit(limit)
         .get();
 
-      console.log(`Found ${snapshot.size} top businesses for category ID ${categoryId}`);
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // Sort and filter in memory instead of in query
+      const businesses = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(business => (business.rating || 0) >= minRating)
+        .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+        .slice(0, limit);
+
+      return businesses;
     } catch (error) {
       console.error('Error getting top businesses:', error);
-      throw error;
+      return [];
     }
   }
 

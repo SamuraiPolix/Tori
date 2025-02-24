@@ -1,17 +1,20 @@
-import React from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Image } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Color, FontFamily } from '../../styles/GlobalStyles';
 import { Ionicons } from "@expo/vector-icons";
+import { CATEGORIES } from '../categories/categoriesData';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const BusinessMapModal = ({ visible, onClose, businesses }) => {
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
   const initialRegion = {
-    latitude: 31.7767,  // Center of Israel
-    longitude: 35.2345,
-    latitudeDelta: 4,
-    longitudeDelta: 4,
+    latitude: 32.0745963,  // Tel Aviv center
+    longitude: 34.7918675,
+    latitudeDelta: 0.2,
+    longitudeDelta: 0.2,
   };
 
   const customMapStyle = [
@@ -24,6 +27,10 @@ const BusinessMapModal = ({ visible, onClose, businesses }) => {
       ]
     }
   ];
+
+  const filteredBusinesses = selectedCategory 
+    ? businesses?.filter(business => business.categories?.includes(selectedCategory))
+    : businesses;
 
   return (
     <Modal
@@ -48,6 +55,50 @@ const BusinessMapModal = ({ visible, onClose, businesses }) => {
             </TouchableOpacity>
           </View>
 
+          {/* Categories Container */}
+          <View style={styles.categoriesMainContainer}>
+            {/* First Row */}
+            <View style={styles.categoryRow}>
+              <TouchableOpacity 
+                style={[styles.categoryButton, !selectedCategory && styles.selectedCategory]}
+                onPress={() => setSelectedCategory(null)}
+              >
+                <Text style={[styles.categoryText, !selectedCategory && styles.selectedCategoryText]}>הכל</Text>
+              </TouchableOpacity>
+              {CATEGORIES.slice(0, 5).map((category) => (
+                <TouchableOpacity 
+                  key={category.id}
+                  style={[styles.categoryButton, selectedCategory === category.id && styles.selectedCategory]}
+                  onPress={() => setSelectedCategory(category.id)}
+                >
+                  <Image source={category.icon} style={styles.categoryIcon} />
+                  <Text style={[styles.categoryText, selectedCategory === category.id && styles.selectedCategoryText]}>
+                    {category.title}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Divider */}
+            <View style={styles.divider} />
+
+            {/* Second Row */}
+            <View style={styles.categoryRow}>
+              {CATEGORIES.slice(5).map((category) => (
+                <TouchableOpacity 
+                  key={category.id}
+                  style={[styles.categoryButton, selectedCategory === category.id && styles.selectedCategory]}
+                  onPress={() => setSelectedCategory(category.id)}
+                >
+                  <Image source={category.icon} style={styles.categoryIcon} />
+                  <Text style={[styles.categoryText, selectedCategory === category.id && styles.selectedCategoryText]}>
+                    {category.title}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Map */}
           <MapView
             style={styles.map}
@@ -60,7 +111,7 @@ const BusinessMapModal = ({ visible, onClose, businesses }) => {
             minZoomLevel={6}
             maxZoomLevel={20}
           >
-            {businesses?.map((business, index) => (
+            {filteredBusinesses?.map((business, index) => (
               business.location && (
                 <Marker
                   key={business.id || index}
@@ -68,6 +119,10 @@ const BusinessMapModal = ({ visible, onClose, businesses }) => {
                     latitude: business.location.latitude,
                     longitude: business.location.longitude
                   }}
+                  title={business.name}
+                  description={business.categories?.map(catId => 
+                    CATEGORIES.find(c => c.id === catId)?.title
+                  ).filter(Boolean).join(', ')}
                   pinColor={Color.primaryColorAmaranthPurple}
                 />
               )
@@ -88,7 +143,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '90%',
-    height: SCREEN_HEIGHT * 0.75, // 3/4 of screen height
+    height: SCREEN_HEIGHT * 0.75,
     backgroundColor: Color.grayscaleColorWhite,
     borderRadius: 15,
     overflow: 'hidden',
@@ -99,30 +154,72 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 15,
-    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: Color.grayscaleColorLightGray,
-    position: 'relative', // For absolute positioning of close button
+    borderBottomColor: Color.grayscaleColorGray200,
   },
   titleContainer: {
     flex: 1,
     alignItems: 'center',
   },
   title: {
-    fontFamily: FontFamily.primaryFontBold,
     fontSize: 18,
-    color: Color.primaryColorAmaranthPurple,
-    textAlign: 'center',
+    fontFamily: FontFamily.rubikBold,
+    color: Color.grayscaleColorBlack,
   },
   closeButton: {
     position: 'absolute',
-    right: 15,
-    top: '50%',
-    transform: [{ translateY: -12 }], // Half of icon size
+    left: 15,
   },
   map: {
     flex: 1,
     width: '100%',
+  },
+  categoriesMainContainer: {
+    backgroundColor: Color.grayscaleColorWhite,
+    paddingVertical: 8,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Color.grayscaleColorGray200,
+    marginVertical: 4,
+    marginHorizontal: 10,
+  },
+  categoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginHorizontal: 4,
+    marginVertical: 2,
+    borderRadius: 20,
+    backgroundColor: Color.grayscaleColorWhite,
+    borderWidth: 1,
+    borderColor: Color.grayscaleColorGray300,
+  },
+  selectedCategory: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    borderColor: Color.primaryColorAmaranthPurple,
+  },
+  categoryIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 6,
+  },
+  categoryText: {
+    fontSize: 14,
+    fontFamily: FontFamily.rubikRegular,
+    color: Color.grayscaleColorBlack,
+  },
+  selectedCategoryText: {
+    color: Color.grayscaleColorWhite,
   },
 });
 

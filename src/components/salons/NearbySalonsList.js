@@ -55,12 +55,6 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
         return false;
       }
 
-      // Rating filter
-      if (salon.rating < filters.rating) {
-        console.log(`Salon ${salon.name} filtered out by rating: ${salon.rating} < ${filters.rating}`);
-        return false;
-      }
-
       // Price filter (using average price of services)
       const avgPrice = salon.services?.reduce((sum, service) => sum + (service.price || 0), 0) / (salon.services?.length || 1);
       if (avgPrice > filters.maxPrice) {
@@ -124,9 +118,15 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
       // 2. Get businesses with haircut category (ID: 1)
       console.log('3. Fetching businesses...');
       const businesses = await FirebaseApi.getBusinessesByCategory(1);
-      console.log(`📋 Found ${businesses.length} businesses`);
+      
+      // Apply rating filter in memory if needed
+      const filteredBusinesses = currentFilters?.rating 
+        ? businesses.filter(b => (b.rating || 0) >= currentFilters.rating)
+        : businesses;
+        
+      console.log(`📋 Found ${filteredBusinesses.length} businesses after filtering`);
       console.log('Business details:');
-      businesses.forEach((business, index) => {
+      filteredBusinesses.forEach((business, index) => {
         console.log(`Business ${index + 1}:`, {
           id: business.id,
           name: business.name,
@@ -140,7 +140,7 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
 
       // 3. Calculate distances and map business data
       console.log('4. Calculating distances...');
-      const businessesWithDistance = businesses.map(business => {
+      const businessesWithDistance = filteredBusinesses.map(business => {
         let distance = null;
 
         if (business.location?.latitude && business.location?.longitude) {

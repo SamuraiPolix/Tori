@@ -54,7 +54,7 @@ const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
       setLoading(true);
       console.log('Fetching salons...');
       
-      const fetchedSalons = await FirebaseApi.getTopBusinesses(1, 100); // Using categoryId 1 for תספורת
+      const fetchedSalons = await FirebaseApi.getTopBusinesses(1); // Using categoryId 1 for תספורת
       console.log('Fetched salons:', fetchedSalons);
       
       setAllSalons(fetchedSalons);
