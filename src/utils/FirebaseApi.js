@@ -3,7 +3,7 @@ import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import storage from '@react-native-firebase/storage';
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 
 class FirebaseApi {
   // Auth methods
@@ -1647,50 +1647,6 @@ class FirebaseApi {
     return appointmentDoc.exists ? { id: appointmentDoc.id, ...appointmentDoc.data() } : null;
   }
 
-  static async getAvailableSlots(businessId, date) {
-    const dateStr = date.toISOString().split('T')[0];
-    
-    const availableSlotsDoc = await firestore()
-      .collection('businesses')
-      .doc(businessId)
-      .collection('availableSlots')
-      .doc(dateStr)
-      .get();
-
-    if (!availableSlotsDoc.exists || !availableSlotsDoc.data()?.slots) {
-      return [];
-    }
-
-    const slotIds = availableSlotsDoc.data().slots;
-    const appointmentDocs = await Promise.all(
-      slotIds.map(id => 
-        firestore()
-          .collection('appointments')
-          .doc(id)
-          .get()
-      )
-    );
-
-    return appointmentDocs
-      .filter(doc => doc.exists && doc.data().status === 'available')
-      .map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          time: data.startTime.toDate(),
-          formattedTime: data.startTime.toDate().toLocaleTimeString('he-IL', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }),
-          serviceName: data.serviceName,
-          servicePrice: data.servicePrice,
-          serviceDuration: data.serviceDuration
-        };
-      })
-      .sort((a, b) => a.time - b.time);
-  }
-
   static async rescheduleAppointment(appointmentId, newDate) {
     const appointment = await this.getAppointmentById(appointmentId);
     if (!appointment) {
@@ -2304,89 +2260,50 @@ class FirebaseApi {
 
       snapshot.forEach((doc) => {
         const business = { id: doc.id, ...doc.data() };
-        businesses.push(business);
+        
+        if (business.location) {
+          // Calculate distance using Haversine formula
+          const distance = this.calculateDistance(
+            filters.userLocation.latitude,
+            filters.userLocation.longitude,
+            business.location.latitude,
+            business.location.longitude
+          );
+          
+          if (distance <= filters.distance) {
+            businesses.push({
+              ...business,
+              distance: parseFloat(distance.toFixed(1))
+            });
+          }
+        }
       });
-
-      console.log(`Found ${businesses.length} total businesses before filtering`);
-
+      
+      console.log(`Found ${businesses.length} businesses within ${filters.distance}km radius`);
+      
       // Apply filters one by one
       if (filters) {
-        // Calculate distances first if location filter is provided
-        if (filters.userLocation && filters.userLocation.latitude && filters.userLocation.longitude) {
-          businesses = businesses.map(business => {
-            if (!business.location || !business.location.latitude || !business.location.longitude) {
-              business.distance = Infinity;
-              return business;
-            }
-
-            const distance = this.calculateDistance(
-              filters.userLocation.latitude,
-              filters.userLocation.longitude,
-              business.location.latitude,
-              business.location.longitude
-            );
-
-            business.distance = distance;
-            return business;
-          });
-
-          // Log some distance information for debugging
-          const sampleBusinesses = businesses.slice(0, 3);
-          console.log('Sample business distances:', sampleBusinesses.map(b => ({
-            name: b.name,
-            location: b.location,
-            distance: b.distance?.toFixed(2) + ' km'
-          })));
-        }
-
-        // Filter by distance if provided
-        if (filters.distance && filters.userLocation) {
-          const maxDistance = filters.distance; // distance should be in km
-          businesses = businesses.filter(business => {
-            const isInRange = business.distance <= maxDistance;
-            if (!isInRange) {
-              console.log(`Business ${business.name} excluded: distance ${business.distance?.toFixed(2)}km > ${maxDistance}km`);
-            }
-            return isInRange;
-          });
-          console.log(`After distance filter (<=${maxDistance}km): ${businesses.length} businesses`);
-        }
-
         // Filter by category if provided
         if (filters.categoryId) {
-          businesses = businesses.filter(business => {
-            const hasCategory = business.categories?.includes(filters.categoryId);
-            if (!hasCategory) {
-              console.log(`Business ${business.name} excluded: category ${filters.categoryId} not found in`, business.categories);
-            }
-            return hasCategory;
-          });
+          businesses = businesses.filter(business =>
+            business.categories?.includes(filters.categoryId)
+          );
           console.log(`After category filter (${filters.categoryId}): ${businesses.length} businesses`);
         }
 
         // Filter by rating if provided
         if (filters.rating) {
-          businesses = businesses.filter(business => {
-            const businessRating = business.rating || 0;
-            const meetsRating = businessRating >= filters.rating;
-            if (!meetsRating) {
-              console.log(`Business ${business.name} excluded: rating ${businessRating} < ${filters.rating}`);
-            }
-            return meetsRating;
-          });
+          businesses = businesses.filter(business => 
+            business.rating >= filters.rating
+          );
           console.log(`After rating filter (>=${filters.rating}): ${businesses.length} businesses`);
         }
 
         // Filter by price if provided
         if (filters.maxPrice) {
-          businesses = businesses.filter(business => {
-            const businessPrice = business.price || 0;
-            const meetsPrice = businessPrice <= filters.maxPrice;
-            if (!meetsPrice) {
-              console.log(`Business ${business.name} excluded: price ${businessPrice} > ${filters.maxPrice}`);
-            }
-            return meetsPrice;
-          });
+          businesses = businesses.filter(business => 
+            business.priceLevel <= filters.maxPrice
+          );
           console.log(`After price filter (<=${filters.maxPrice}): ${businesses.length} businesses`);
         }
 
@@ -2410,15 +2327,15 @@ class FirebaseApi {
   }
 
   static calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371; // Earth's radius in kilometers
     const dLat = this.deg2rad(lat2 - lat1);
     const dLon = this.deg2rad(lon2 - lon1);
     const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
       Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in kilometers
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
   }
 
   static deg2rad(deg) {
@@ -2505,149 +2422,183 @@ class FirebaseApi {
     return location;
   }
 
-  static async updateBusinessesWithoutLocation() {
+  static async getQuickAppointments({ latitude, longitude }, maxDistance = 10) {
     try {
-      // Request location permissions for reverse geocoding
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.error('Location permission denied');
-        return;
+      console.log('Getting quick appointments with:', { latitude, longitude, maxDistance });
+      
+      // Get all businesses within the radius
+      const businesses = await this.getBusinessesWithinRadius({ latitude, longitude }, maxDistance);
+      console.log(`Found ${businesses.length} businesses within ${maxDistance}km radius`);
+      
+      // For each business, get their next available appointment
+      const now = new Date();
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const quickAppointments = [];
+      
+      for (const business of businesses) {
+        console.log(`Checking appointments for business: ${business.name}`);
+        // Get business working hours for today
+        const dayOfWeek = now.getDay();
+        const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const workingHours = business.workingHours?.[daysMap[dayOfWeek]];
+
+        if (!workingHours?.isOpen) {
+          console.log(`Business ${business.name} is closed today`);
+          continue;
+        }
+
+        // Get all appointments for today
+        const bookedSlots = await this.getBusinessAppointments(business.id, now, endOfDay);
+        console.log(`Found ${bookedSlots.length} booked slots for ${business.name}`);
+        
+        // Get available slots
+        const availableSlots = await this.findAvailableSlots(business, bookedSlots, now);
+        console.log(`Found ${availableSlots.length} available slots for ${business.name}`);
+        
+        if (availableSlots.length > 0) {
+          quickAppointments.push({
+            businessId: business.id,
+            businessName: business.name,
+            businessImage: business.images?.[0],
+            distance: business.distance,
+            nextAvailable: availableSlots[0], // First available slot
+            allSlots: availableSlots
+          });
+        }
       }
 
-      // Create backup first
-      console.log('Creating backup before updates...');
-      const backup = await this.backupBusinesses();
-      console.log(`Backup created: ${backup.backupCollection}`);
-
-      const db = firestore();
-      const businessesRef = db.collection('businesses');
-      const snapshot = await businessesRef.get();
-      
-      let updatedCount = 0;
-      let skippedCount = 0;
-      let centralCount = 0;
-      let northCount = 0;
-      let southCount = 0;
-      
-      console.log(`Found ${snapshot.size} total businesses`);
-      
-      for (const doc of snapshot.docs) {
-        const business = doc.data();
-        let location = business.location;
-        
-        // If no location exists, generate a random one
-        if (!location?.latitude || !location?.longitude) {
-          location = this.getRandomLocationInIsrael();
-          console.log(`Generated new location for business ${doc.id}`);
-        } else {
-          console.log(`Using existing location for business ${doc.id}`);
-        }
-        
-        // Track region distribution
-        if (location.latitude <= this.ISRAEL_REGIONS.central.north && 
-            location.latitude >= this.ISRAEL_REGIONS.central.south &&
-            location.longitude >= this.ISRAEL_REGIONS.central.west &&
-            location.longitude <= this.ISRAEL_REGIONS.central.east) {
-          centralCount++;
-        } else if (location.latitude > this.ISRAEL_REGIONS.central.north) {
-          northCount++;
-        } else {
-          southCount++;
-        }
-        
-        try {
-          // Get address using reverse geocoding
-          const [addressInfo] = await Location.reverseGeocodeAsync({
-            latitude: location.latitude,
-            longitude: location.longitude
-          }, {
-            language: "he"
-          });
-
-          // Format the address in Hebrew
-          const formattedAddress = [
-            addressInfo.street,
-            addressInfo.streetNumber,
-            addressInfo.city,
-            addressInfo.region,
-            "ישראל"
-          ].filter(Boolean).join(', ');
-
-          // Update the business document with location and address
-          await businessesRef.doc(doc.id).update({
-            location: location,
-            address: formattedAddress || `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`
-          });
-
-          console.log(`Updated business ${doc.id} with location:`, location, 'address:', formattedAddress);
-          
-          updatedCount++;
-        } catch (error) {
-          console.error(`Error updating business ${doc.id}:`, error);
-        }
-
-        // Add a small delay to avoid hitting rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-
-      const result = {
-        total: snapshot.size,
-        updated: updatedCount,
-        skipped: skippedCount,
-        failed: snapshot.size - updatedCount - skippedCount,
-        distribution: {
-          central: centralCount,
-          north: northCount,
-          south: southCount
-        }
-      };
-
-      console.log(`Update complete:
-        - Total businesses: ${snapshot.size}
-        - Updated: ${updatedCount}
-        - Skipped (already had location): ${skippedCount}
-        - Failed: ${snapshot.size - updatedCount - skippedCount}
-        
-        Location distribution of updated businesses:
-        - Central Israel: ${centralCount} (${updatedCount ? ((centralCount/updatedCount)*100).toFixed(1) : 0}%)
-        - Northern Israel: ${northCount} (${updatedCount ? ((northCount/updatedCount)*100).toFixed(1) : 0}%)
-        - Southern Israel: ${southCount} (${updatedCount ? ((southCount/updatedCount)*100).toFixed(1) : 0}%)
-      `);
-
-      return result;
+      console.log(`Returning ${quickAppointments.length} businesses with available appointments`);
+      return quickAppointments;
     } catch (error) {
-      console.error('Error updating businesses:', error);
+      console.error('Error in getQuickAppointments:', error);
       throw error;
     }
   }
 
-  static async backupBusinesses() {
+  static async getBusinessesWithinRadius({ latitude, longitude }, maxDistance) {
     try {
-      const db = firestore();
-      const businessesRef = db.collection('businesses');
+      console.log('Getting businesses within radius:', { latitude, longitude, maxDistance });
+      const businessesRef = firestore().collection('businesses');
       const snapshot = await businessesRef.get();
+      console.log(`Found ${snapshot.size} total businesses in database`);
       
-      // Create backup collection with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupRef = db.collection(`businesses_backup_${timestamp}`);
+      const businesses = [];
       
-      console.log(`Creating backup: businesses_backup_${timestamp}`);
-      
-      let backupCount = 0;
       for (const doc of snapshot.docs) {
-        await backupRef.doc(doc.id).set(doc.data());
-        backupCount++;
+        const business = { id: doc.id, ...doc.data() };
+        
+        if (business.location) {
+          // Calculate distance using Haversine formula
+          const distance = this.calculateDistance(
+            latitude,
+            longitude,
+            business.location.latitude,
+            business.location.longitude
+          );
+          
+          if (distance <= maxDistance) {
+            businesses.push({
+              ...business,
+              distance: parseFloat(distance.toFixed(1))
+            });
+          }
+        } else {
+          console.log(`Business ${business.name || business.id} has no location data`);
+        }
       }
       
-      console.log(`Backup complete: ${backupCount} businesses backed up`);
-      return {
-        backupCollection: `businesses_backup_${timestamp}`,
-        count: backupCount
-      };
+      console.log(`Found ${businesses.length} businesses within ${maxDistance}km radius`);
+      return businesses;
     } catch (error) {
-      console.error('Error creating backup:', error);
+      console.error('Error in getBusinessesWithinRadius:', error);
       throw error;
     }
+  }
+
+  static calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = this.toRad(lat2 - lat1);
+    const dLon = this.toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  static toRad(value) {
+    return value * Math.PI / 180;
+  }
+
+  static async findAvailableSlots(business, bookedSlots, startTime) {
+    const slots = [];
+    const slotDuration = business.scheduleSettings?.slotDuration || 30; // Default 30 minutes
+    
+    const now = new Date(startTime);
+    const dayOfWeek = now.getDay();
+    const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const workingHours = business.workingHours[daysMap[dayOfWeek]];
+
+    if (!workingHours.isOpen) {
+      return slots;
+    }
+
+    const [openHour, openMinute] = workingHours.open.split(':');
+    const [closeHour, closeMinute] = workingHours.close.split(':');
+    
+    // Set initial slot time
+    let currentSlot = new Date(now);
+    // Round up to the next slot
+    const minutes = currentSlot.getMinutes();
+    const roundedMinutes = Math.ceil(minutes / slotDuration) * slotDuration;
+    currentSlot.setMinutes(roundedMinutes, 0, 0);
+    
+    const closeTime = new Date(now);
+    closeTime.setHours(parseInt(closeHour), parseInt(closeMinute), 0, 0);
+
+    // If current time is past closing time, return no slots
+    if (currentSlot >= closeTime) {
+      return slots;
+    }
+
+    while (currentSlot < closeTime) {
+      const slotTime = this.getTimestampFromDate(currentSlot);
+      
+      // Check if this slot conflicts with any booked appointment
+      const isSlotAvailable = !bookedSlots.some(booking => {
+        const bookingDate = booking.startTime.toDate();
+        const bookingMinutes = bookingDate.getHours() * 60 + bookingDate.getMinutes();
+        const slotMinutes = currentSlot.getHours() * 60 + currentSlot.getMinutes();
+        const serviceEndMinutes = slotMinutes + slotDuration;
+        const bookingEndMinutes = bookingMinutes + (booking.serviceDuration || 30);
+        
+        return (
+          (slotMinutes >= bookingMinutes && slotMinutes < bookingEndMinutes) ||
+          (serviceEndMinutes > bookingMinutes && serviceEndMinutes <= bookingEndMinutes) ||
+          (slotMinutes <= bookingMinutes && serviceEndMinutes >= bookingEndMinutes)
+        );
+      });
+
+      if (isSlotAvailable) {
+        const hours = currentSlot.getHours().toString().padStart(2, '0');
+        const mins = currentSlot.getMinutes().toString().padStart(2, '0');
+        const day = currentSlot.getDate().toString().padStart(2, '0');
+        const month = (currentSlot.getMonth() + 1).toString().padStart(2, '0');
+        slots.push({
+          startTime: slotTime,
+          formattedTime: `${hours}:${mins}`,
+          formattedDate: `${day}/${month}`,
+          duration: slotDuration
+        });
+      }
+
+      currentSlot = new Date(currentSlot.getTime() + slotDuration * 60000);
+    }
+
+    return slots;
   }
 }
 

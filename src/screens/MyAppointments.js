@@ -266,6 +266,7 @@ const MyAppointments = ({ navigation, route }) => {
               home: 'Home',
               saved: 'Saved',
               profile: 'Profile',
+              quick: 'QuickAppointments'
             };
             if (screens[tabId]) {
               navigation.navigate(screens[tabId]);
