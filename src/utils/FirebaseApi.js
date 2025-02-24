@@ -2227,7 +2227,7 @@ class FirebaseApi {
     }
   }
 
-  static async searchBusinesses(searchText, filters = null) {
+  static async searchBusinesses(searchText, filters = { rating: 0 }) {
     try {
       const db = firestore();
       const businessesRef = db.collection('businesses');
@@ -2251,9 +2251,9 @@ class FirebaseApi {
       }
 
       // Apply rating filter if provided
-      if (filters?.rating) {
+      if (filters?.rating !== undefined) {
         businesses = businesses.filter(business => 
-          business.rating >= filters.rating
+          (business.rating || 0) >= filters.rating
         );
       }
 

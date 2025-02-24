@@ -48,9 +48,9 @@ const SalonCard = ({ salon: business, onPress }) => {
     if (!distance && distance !== 0) return '';
     
     if (distance < 1) {
-      return `${(distance * 1000).toFixed(0)}מ'`;
+      return `${(distance * 1000).toFixed(0)} מ'`;
     }
-    return `${distance.toFixed(1)}ק"מ`;
+    return `${distance.toFixed(1)} ק"מ`;
   };
 
   return (
@@ -84,8 +84,8 @@ const SalonCard = ({ salon: business, onPress }) => {
           </View>
           {business.distance !== undefined && (
             <View style={styles.locationContainer}>
-              <Ionicons name="location" size={16} color="#666666" />
-              <Text style={styles.location}>{formatDistance(business.distance)}</Text>
+              <Ionicons name="location" size={16} color={Color.primaryColorAmaranthPurple} />
+              <Text style={styles.distanceText}>{formatDistance(business.distance)}</Text>
             </View>
           )}
         </View>
@@ -165,6 +165,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FontFamily.assistantRegular,
     color: "#666666",
+    textAlign: 'right',
+  },
+  distanceText: {
+    fontSize: 14,
+    fontFamily: FontFamily.assistantRegular,
+    color: Color.primaryColorAmaranthPurple,
     textAlign: 'right',
   },
   favoriteButton: {

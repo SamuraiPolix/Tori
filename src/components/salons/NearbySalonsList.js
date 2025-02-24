@@ -16,7 +16,7 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
   const [errorMsg, setErrorMsg] = useState(null);
   const [currentFilters, setCurrentFilters] = useState({
     distance: 50, // Default 50km radius
-    rating: 1,
+    rating: 0,    // Changed from 1 to 0
     maxPrice: 1000,
     availability: false
   });
