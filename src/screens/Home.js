@@ -412,14 +412,21 @@ const HomeScreen = ({ navigation }) => {
             />
           </View>
 
-          {/* Map Button */}
-          <TouchableOpacity 
-            style={styles.mapButton}
-            onPress={() => navigation.navigate('Map')}
-          >
-            <Ionicons name="map-outline" size={24} color={Color.primaryColorAmaranthPurple} />
-            <Text style={styles.mapButtonText}>הצג עסקים על המפה</Text>
-          </TouchableOpacity>
+          {/* Map Button Section */}
+          <View style={styles.mapButtonSection}>
+            <TouchableOpacity 
+              style={styles.mapButton}
+              onPress={() => navigation.navigate('Map')}
+            >
+              <Ionicons 
+                name="map-outline" 
+                size={24} 
+                color={Color.primaryColorAmaranthPurple} 
+                style={styles.mapIcon}
+              />
+              <Text style={styles.mapButtonText}>הצג עסקים על המפה</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Top Rated Salons */}
           <SalonsList 
@@ -561,15 +568,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     textAlign: 'right',
   },
+  mapButtonSection: {
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
   mapButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 8,
-    marginHorizontal: 16,
-    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Color.primaryColorAmaranthPurple,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -578,12 +591,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
+    width: '100%',
   },
   mapButtonText: {
     fontSize: 16,
     fontFamily: FontFamily.assistantSemiBold,
     color: Color.primaryColorAmaranthPurple,
     marginRight: 8,
+  },
+  mapIcon: {
+    marginLeft: 8,
   },
 });
 
