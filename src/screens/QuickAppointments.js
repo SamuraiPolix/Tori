@@ -386,33 +386,18 @@ const QuickAppointments = ({ navigation }) => {
       distance: a.distance
     })));
 
-    const sorted = [...appointments].sort((a, b) => {
+    const sorted = appointments.sort((a, b) => {
       if (sortType === 'time') {
-        // Earlier times should come first
         const timeA = a.startTimeMinutes || 0;
         const timeB = b.startTimeMinutes || 0;
-        return timeA - timeB; // This will put earlier times first
+        return timeA - timeB;
       } else if (sortType === 'distance') {
-        // Closer distances should come first
-        // Put null/undefined distances at the end
-        if (!a.distance && !b.distance) return 0;
-        if (!a.distance) return 1;
-        if (!b.distance) return -1;
-
-        const distanceA = parseFloat(a.distance);
-        const distanceB = parseFloat(b.distance);
-        
-        if (Math.abs(distanceA - distanceB) < 0.1) {
-          // If distances are very close, sort by time
-          const timeA = a.startTimeMinutes || 0;
-          const timeB = b.startTimeMinutes || 0;
-          return timeA - timeB;
-        }
-        
-        return distanceA - distanceB;
+        const distanceA = a.distance || Number.MAX_VALUE;
+        const distanceB = b.distance || Number.MAX_VALUE;
+        return distanceA - distanceB || ((a.startTimeMinutes || 0) - (b.startTimeMinutes || 0));
       }
       return 0;
-    });
+    }).slice(0, 15);  // Limit to top 15 appointments
 
     console.log('After sort:', sorted.map(a => ({
       time: a.startTimeMinutes,
@@ -875,7 +860,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Color.grayscaleColorBlack,
     marginLeft: 4,
-    marginRight: 8,
   },
   separator: {
     width: 1,
