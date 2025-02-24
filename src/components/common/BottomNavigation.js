@@ -23,6 +23,13 @@ const navigationItems = [
     label: 'התורים שלי'
   },
   {
+    id: 'quick',
+    icon: require('../../assets/ic--calendar.png'),
+    activeIcon: require('../../assets/ic--calendar.png'),
+    label: 'תור מהיר',
+    isQuick: true
+  },
+  {
     id: 'saved',
     icon: require('../../assets/ic--save.png'),
     activeIcon: require('../../assets/ic--save.png'),
@@ -44,18 +51,20 @@ const BottomNavigation = ({ activeTab, onTabPress }) => {
           key={item.id}
           style={[
             styles.navItem,
-            activeTab === item.id && styles.activeNavItem
+            activeTab === item.id && styles.activeNavItem,
+            item.isQuick && styles.quickNavItem
           ]}
           onPress={() => onTabPress(item.id)}
         >
           <Image
-            style={styles.navIcon}
+            style={[styles.navIcon, item.isQuick && styles.quickNavIcon]}
             contentFit="cover"
             source={activeTab === item.id ? item.activeIcon : item.icon}
           />
           <Text style={[
             styles.navText,
-            activeTab === item.id && styles.activeNavText
+            activeTab === item.id && styles.activeNavText,
+            item.isQuick && styles.quickNavText
           ]}>
             {item.label}
           </Text>
@@ -85,6 +94,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 8,
   },
+  quickNavItem: {
+    backgroundColor: Color.primaryColorAmaranthPurple,
+    borderRadius: 30,
+    padding: 12,
+    marginTop: -20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
   activeNavItem: {
     backgroundColor: Color.primaryColorAmaranthPurple,
     borderRadius: 12,
@@ -92,6 +112,11 @@ const styles = StyleSheet.create({
   navIcon: {
     width: 24,
     height: 24,
+  },
+  quickNavIcon: {
+    width: 28,
+    height: 28,
+    tintColor: Color.grayscaleColorWhite,
   },
   navText: {
     marginTop: 4,
@@ -101,7 +126,10 @@ const styles = StyleSheet.create({
   },
   activeNavText: {
     color: Color.grayscaleColorWhite,
-    fontFamily: FontFamily.assistantBold,
+  },
+  quickNavText: {
+    color: Color.grayscaleColorWhite,
+    fontFamily: FontFamily.assistantSemiBold,
   },
 });
 

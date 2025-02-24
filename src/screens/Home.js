@@ -231,16 +231,15 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleTabPress = (tabId) => {
-    if (tabId !== activeTab) {
-      setActiveTab(tabId);
-      const screens = {
-        appointments: 'MyAppointments',
-        saved: 'Saved',
-        profile: 'Profile'
-      };
-      if (screens[tabId]) {
-        navigation.navigate(screens[tabId]);
-      }
+    setActiveTab(tabId);
+    const screens = {
+      appointments: 'MyAppointments',
+      saved: 'Saved',
+      profile: 'Profile',
+      quick: 'QuickAppointments'
+    };
+    if (screens[tabId]) {
+      navigation.navigate(screens[tabId]);
     }
   };
 

@@ -2,7 +2,8 @@ import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import storage from '@react-native-firebase/storage';
-import { PermissionsAndroid, Platform } from 'react-native';
+import * as Location from 'expo-location';
+import { Platform, PermissionsAndroid } from 'react-native';
 
 class FirebaseApi {
   // Auth methods
@@ -2261,6 +2262,357 @@ class FirebaseApi {
       console.error('Error searching businesses:', error);
       return [];
     }
+  }
+
+  static async getBusinessesWithFilters(filters) {
+    try {
+      console.log('Starting filter with:', filters);
+      
+      // Get all businesses first
+      const snapshot = await firestore().collection('businesses').get();
+      let businesses = [];
+
+      snapshot.forEach((doc) => {
+        const business = { id: doc.id, ...doc.data() };
+        
+        if (business.location) {
+          // Calculate distance using Haversine formula
+          const distance = this.calculateDistance(
+            filters.userLocation.latitude,
+            filters.userLocation.longitude,
+            business.location.latitude,
+            business.location.longitude
+          );
+          
+          if (distance <= filters.distance) {
+            businesses.push({
+              ...business,
+              distance: parseFloat(distance.toFixed(1))
+            });
+          }
+        }
+      });
+      
+      console.log(`Found ${businesses.length} businesses within ${filters.distance}km radius`);
+      
+      // Apply filters one by one
+      if (filters) {
+        // Filter by category if provided
+        if (filters.categoryId) {
+          businesses = businesses.filter(business =>
+            business.categories?.includes(filters.categoryId)
+          );
+          console.log(`After category filter (${filters.categoryId}): ${businesses.length} businesses`);
+        }
+
+        // Filter by rating if provided
+        if (filters.rating) {
+          businesses = businesses.filter(business => 
+            business.rating >= filters.rating
+          );
+          console.log(`After rating filter (>=${filters.rating}): ${businesses.length} businesses`);
+        }
+
+        // Filter by price if provided
+        if (filters.maxPrice) {
+          businesses = businesses.filter(business => 
+            business.priceLevel <= filters.maxPrice
+          );
+          console.log(`After price filter (<=${filters.maxPrice}): ${businesses.length} businesses`);
+        }
+
+        // Sort by distance if we have calculated distances
+        if (filters.userLocation) {
+          businesses.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+          console.log('First 3 businesses after sorting by distance:', 
+            businesses.slice(0, 3).map(b => ({
+              name: b.name,
+              distance: b.distance?.toFixed(2) + ' km'
+            }))
+          );
+        }
+      }
+
+      return businesses;
+    } catch (error) {
+      console.error('Error getting businesses with filters:', error);
+      throw error;
+    }
+  }
+
+  static calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = this.deg2rad(lat2 - lat1);
+    const dLon = this.deg2rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  static deg2rad(deg) {
+    return deg * (Math.PI / 180);
+  }
+
+  // Add Israel boundaries and regions
+  static ISRAEL_REGIONS = {
+    central: {
+      // Dan Metropolitan area (Tel Aviv, Ramat Gan, Givatayim, etc.)
+      north: 32.15,
+      south: 31.95,
+      west: 34.72, // Adjusted to avoid sea
+      east: 34.85,
+      weight: 0.6  // 60% chance to be in central region
+    },
+    north: {
+      // Northern Israel (Haifa, Nazareth, etc.)
+      north: 33.25,
+      south: 32.15,
+      west: 34.90, // Adjusted to avoid sea
+      east: 35.60,
+      weight: 0.2  // 20% chance
+    },
+    south: {
+      // Southern Israel (Beer Sheva, Eilat, etc.)
+      north: 31.95,
+      south: 29.50,
+      west: 34.80, // Adjusted to avoid sea
+      east: 35.20,
+      weight: 0.2  // 20% chance
+    }
+  };
+
+  static isLocationInIsrael(location) {
+    // Check if location is in any of the defined regions
+    for (const region of Object.values(this.ISRAEL_REGIONS)) {
+      if (location.latitude <= region.north &&
+          location.latitude >= region.south &&
+          location.longitude >= region.west &&
+          location.longitude <= region.east) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static getRandomLocationInIsrael() {
+    // Determine which region to use based on weights
+    const rand = Math.random();
+    let selectedRegion;
+    
+    if (rand < this.ISRAEL_REGIONS.central.weight) {
+      selectedRegion = this.ISRAEL_REGIONS.central;
+      console.log('Selected central region for new location');
+    } else if (rand < this.ISRAEL_REGIONS.central.weight + this.ISRAEL_REGIONS.north.weight) {
+      selectedRegion = this.ISRAEL_REGIONS.north;
+      console.log('Selected northern region for new location');
+    } else {
+      selectedRegion = this.ISRAEL_REGIONS.south;
+      console.log('Selected southern region for new location');
+    }
+
+    let location;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    do {
+      const lat = Math.random() * (selectedRegion.north - selectedRegion.south) + selectedRegion.south;
+      const lon = Math.random() * (selectedRegion.east - selectedRegion.west) + selectedRegion.west;
+      location = { latitude: lat, longitude: lon };
+      attempts++;
+
+      // If we can't find a valid location after maxAttempts, use the region center
+      if (attempts >= maxAttempts) {
+        location = {
+          latitude: (selectedRegion.north + selectedRegion.south) / 2,
+          longitude: (selectedRegion.east + selectedRegion.west) / 2
+        };
+        break;
+      }
+    } while (!this.isLocationInIsrael(location));
+    
+    return location;
+  }
+
+  static async getQuickAppointments({ latitude, longitude }, maxDistance = 10) {
+    try {
+      console.log('Getting quick appointments with:', { latitude, longitude, maxDistance });
+      
+      // Get all businesses within the radius
+      const businesses = await this.getBusinessesWithinRadius({ latitude, longitude }, maxDistance);
+      console.log(`Found ${businesses.length} businesses within ${maxDistance}km radius`);
+      
+      // For each business, get their next available appointment
+      const now = new Date();
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const quickAppointments = [];
+      
+      for (const business of businesses) {
+        console.log(`Checking appointments for business: ${business.name}`);
+        // Get business working hours for today
+        const dayOfWeek = now.getDay();
+        const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const workingHours = business.workingHours?.[daysMap[dayOfWeek]];
+
+        if (!workingHours?.isOpen) {
+          console.log(`Business ${business.name} is closed today`);
+          continue;
+        }
+
+        // Get all appointments for today
+        const bookedSlots = await this.getBusinessAppointments(business.id, now, endOfDay);
+        console.log(`Found ${bookedSlots.length} booked slots for ${business.name}`);
+        
+        // Get available slots
+        const availableSlots = await this.findAvailableSlots(business, bookedSlots, now);
+        console.log(`Found ${availableSlots.length} available slots for ${business.name}`);
+        
+        if (availableSlots.length > 0) {
+          quickAppointments.push({
+            businessId: business.id,
+            businessName: business.name,
+            businessImage: business.images?.[0],
+            distance: business.distance,
+            nextAvailable: availableSlots[0], // First available slot
+            allSlots: availableSlots
+          });
+        }
+      }
+
+      console.log(`Returning ${quickAppointments.length} businesses with available appointments`);
+      return quickAppointments;
+    } catch (error) {
+      console.error('Error in getQuickAppointments:', error);
+      throw error;
+    }
+  }
+
+  static async getBusinessesWithinRadius({ latitude, longitude }, maxDistance) {
+    try {
+      console.log('Getting businesses within radius:', { latitude, longitude, maxDistance });
+      const businessesRef = firestore().collection('businesses');
+      const snapshot = await businessesRef.get();
+      console.log(`Found ${snapshot.size} total businesses in database`);
+      
+      const businesses = [];
+      
+      for (const doc of snapshot.docs) {
+        const business = { id: doc.id, ...doc.data() };
+        
+        if (business.location) {
+          // Calculate distance using Haversine formula
+          const distance = this.calculateDistance(
+            latitude,
+            longitude,
+            business.location.latitude,
+            business.location.longitude
+          );
+          
+          if (distance <= maxDistance) {
+            businesses.push({
+              ...business,
+              distance: parseFloat(distance.toFixed(1))
+            });
+          }
+        } else {
+          console.log(`Business ${business.name || business.id} has no location data`);
+        }
+      }
+      
+      console.log(`Found ${businesses.length} businesses within ${maxDistance}km radius`);
+      return businesses;
+    } catch (error) {
+      console.error('Error in getBusinessesWithinRadius:', error);
+      throw error;
+    }
+  }
+
+  static calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = this.toRad(lat2 - lat1);
+    const dLon = this.toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  static toRad(value) {
+    return value * Math.PI / 180;
+  }
+
+  static async findAvailableSlots(business, bookedSlots, startTime) {
+    const slots = [];
+    const slotDuration = business.scheduleSettings?.slotDuration || 30; // Default 30 minutes
+    
+    const now = new Date(startTime);
+    const dayOfWeek = now.getDay();
+    const daysMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const workingHours = business.workingHours[daysMap[dayOfWeek]];
+
+    if (!workingHours.isOpen) {
+      return slots;
+    }
+
+    const [openHour, openMinute] = workingHours.open.split(':');
+    const [closeHour, closeMinute] = workingHours.close.split(':');
+    
+    // Set initial slot time
+    let currentSlot = new Date(now);
+    // Round up to the next slot
+    const minutes = currentSlot.getMinutes();
+    const roundedMinutes = Math.ceil(minutes / slotDuration) * slotDuration;
+    currentSlot.setMinutes(roundedMinutes, 0, 0);
+    
+    const closeTime = new Date(now);
+    closeTime.setHours(parseInt(closeHour), parseInt(closeMinute), 0, 0);
+
+    // If current time is past closing time, return no slots
+    if (currentSlot >= closeTime) {
+      return slots;
+    }
+
+    while (currentSlot < closeTime) {
+      const slotTime = this.getTimestampFromDate(currentSlot);
+      
+      // Check if this slot conflicts with any booked appointment
+      const isSlotAvailable = !bookedSlots.some(booking => {
+        const bookingDate = booking.startTime.toDate();
+        const bookingMinutes = bookingDate.getHours() * 60 + bookingDate.getMinutes();
+        const slotMinutes = currentSlot.getHours() * 60 + currentSlot.getMinutes();
+        const serviceEndMinutes = slotMinutes + slotDuration;
+        const bookingEndMinutes = bookingMinutes + (booking.serviceDuration || 30);
+        
+        return (
+          (slotMinutes >= bookingMinutes && slotMinutes < bookingEndMinutes) ||
+          (serviceEndMinutes > bookingMinutes && serviceEndMinutes <= bookingEndMinutes) ||
+          (slotMinutes <= bookingMinutes && serviceEndMinutes >= bookingEndMinutes)
+        );
+      });
+
+      if (isSlotAvailable) {
+        const hours = currentSlot.getHours().toString().padStart(2, '0');
+        const mins = currentSlot.getMinutes().toString().padStart(2, '0');
+        const day = currentSlot.getDate().toString().padStart(2, '0');
+        const month = (currentSlot.getMonth() + 1).toString().padStart(2, '0');
+        slots.push({
+          startTime: slotTime,
+          formattedTime: `${hours}:${mins}`,
+          formattedDate: `${day}/${month}`,
+          duration: slotDuration
+        });
+      }
+
+      currentSlot = new Date(currentSlot.getTime() + slotDuration * 60000);
+    }
+
+    return slots;
   }
 }
 
