@@ -2,6 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import storage from '@react-native-firebase/storage';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Location from 'expo-location';
 import { Platform, PermissionsAndroid } from 'react-native';
 
@@ -124,7 +125,7 @@ class FirebaseApi {
         id: businessId,
         name: data.name,
         hasServices: !!data.services,
-        servicesCount: data.services ? Object.keys(data.services).length : 0
+        servicesCount: data.services ? Object.keys(data.services).length : 0,
       });
 
       return {
@@ -529,9 +530,10 @@ class FirebaseApi {
         .where('categories', 'array-contains', Number(categoryId))
         .get();
 
+      // add distance field
       return snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       }));
     } catch (error) {
       console.error('Error getting businesses by category:', error);
@@ -2615,6 +2617,26 @@ class FirebaseApi {
     }
 
     return slots;
+  }
+  
+  static async handlePhoneAuthentication() {
+    console.log('Handling phone authentication');
+    const currentUser = this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('No authenticated user found');
+    }
+
+    // Try to get existing user data
+    const userData = await this.getUserData(currentUser.uid);
+    if (userData) {
+      console.log('Existing user found:', userData);
+      // Update last login
+      await this.updateLastLogin(currentUser.uid);
+      return { user: currentUser, userData, isExisting: true };
+    }
+
+    console.log('No existing user found, needs to create new user');
+    return { user: currentUser, isExisting: false };
   }
 }
 
