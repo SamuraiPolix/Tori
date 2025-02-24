@@ -124,7 +124,7 @@ class FirebaseApi {
         id: businessId,
         name: data.name,
         hasServices: !!data.services,
-        servicesCount: data.services ? Object.keys(data.services).length : 0
+        servicesCount: data.services ? Object.keys(data.services).length : 0,
       });
 
       return {
@@ -529,9 +529,10 @@ class FirebaseApi {
         .where('categories', 'array-contains', Number(categoryId))
         .get();
 
+      // add distance field
       return snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
       }));
     } catch (error) {
       console.error('Error getting businesses by category:', error);
