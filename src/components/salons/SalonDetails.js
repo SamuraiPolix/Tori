@@ -172,21 +172,6 @@ const SalonDetails = ({ route }) => {
     return d.toISOString().split('T')[0];
   };
 
-  const fetchAvailableSlots = async (date) => {
-    if (!businessData.id || !date) return [];
-    
-    try {
-      setIsLoading(true);
-      return await FirebaseApi.getAvailableSlots(businessData.id, date);
-    } catch (error) {
-      console.error('Error fetching available slots:', error);
-      Alert.alert('שגיאה', 'לא ניתן לטעון את התורים הזמינים');
-      return [];
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const findAvailableAppointments = async (businessId, selectedDate, serviceOverride = null) => {
     try {
       const serviceToUse = serviceOverride || selectedService;
