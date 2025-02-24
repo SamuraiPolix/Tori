@@ -113,8 +113,10 @@ const Frame = ({ navigation }) => {
     try {
       const { user, userData } = await FirebaseApi.signInWithEmail(loginEmail, loginPassword);
       await storeUserData(userData);
-      setIsLoading(false);
-      navigation.navigate('Home');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
     } catch (error) {
       let errorMessage = 'אירעה שגיאה בתהליך ההתחברות';
       
@@ -145,7 +147,10 @@ const Frame = ({ navigation }) => {
       setIsLoading(true);
       const { user, userData } = await FirebaseApi.signInWithGoogle();
       await storeUserData(userData);
-      navigation.navigate('Home');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
     } catch (error) {
       console.error('Google Sign-In Error:', error);
       let errorMessage = 'אירעה שגיאה בהתחברות עם Google';
