@@ -52,11 +52,14 @@ const SalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
   const fetchSalons = async () => {
     try {
       setLoading(true);
-      console.log('Fetching salons...');
+      const category = await FirebaseApi.getHaircutCategory();
       
-      const fetchedSalons = await FirebaseApi.getTopBusinesses(1); // Using categoryId 1 for תספורת
-      console.log('Fetched salons:', fetchedSalons);
-      
+      if (!category) {
+        setLoading(false);
+        return;
+      }
+
+      const fetchedSalons = await FirebaseApi.getTopBusinesses(category.categoryId, 100);
       setAllSalons(fetchedSalons);
       
       // Apply current filters if they exist

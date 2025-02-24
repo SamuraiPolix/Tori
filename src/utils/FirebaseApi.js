@@ -2,8 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import storage from '@react-native-firebase/storage';
-import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 class FirebaseApi {
   // Auth methods
@@ -198,7 +197,7 @@ class FirebaseApi {
         },
         service: {
           id: data.serviceId,
-          name: data.serviceName || 'שם שירות לא זמין',
+          name: data.serviceName || 'שירות לא זמין',
           duration: data.serviceDuration || 0,
           price: data.servicePrice || 0
         }
@@ -509,61 +508,53 @@ class FirebaseApi {
 
   // Salon and Category methods
   static async getHaircutCategory() {
-    return { name: 'תספורת' };  // Just return the category name
+    const snapshot = await firestore()
+      .collection('categories')
+      .where('name', '==', 'תספורת')
+      .get();
+
+    if (snapshot.empty) return null;
+    const categoryData = snapshot.docs[0].data();
+    return {
+      id: snapshot.docs[0].id,
+      ...categoryData
+    };
   }
 
-  static async getBusinessesByCategory(categoryId, minRating = 0) {
+  static async getBusinessesByCategory(categoryId) {
     try {
-      if (!categoryId) {
-        console.error('Category ID is required');
-        return [];
-      }
-
       const snapshot = await firestore()
         .collection('businesses')
-        .where('categories', 'array-contains', categoryId)
+        .where('categories', 'array-contains', Number(categoryId))
         .get();
 
-      console.log(`Found ${snapshot.size} businesses for category ID ${categoryId}`);
-      
-      // Filter by rating in memory instead of in query to avoid needing composite index
-      const businesses = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(business => (business.rating || 0) >= minRating);
-
-      return businesses;
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
     } catch (error) {
       console.error('Error getting businesses by category:', error);
       return [];
     }
   }
 
-  static async getTopBusinesses(categoryId, limit = 10, minRating = 0) {
-    try {
-      if (!categoryId) {
-        console.error('Category ID is required');
-        return [];
-      }
+  static async getTopBusinesses(categoryId, limit = 10) {
+    console.log('Getting top businesses for category:', categoryId, 'limit:', limit);
+    const snapshot = await firestore()
+      .collection('businesses')
+      .where('categories', 'array-contains', categoryId)
+      .get();
 
-      const snapshot = await firestore()
-        .collection('businesses')
-        .where('categories', 'array-contains', categoryId)
-        .get();
-
-      // Sort and filter in memory instead of in query
-      const businesses = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(business => (business.rating || 0) >= minRating)
-        .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-        .slice(0, limit);
-
-      return businesses;
-    } catch (error) {
-      console.error('Error getting top businesses:', error);
-      return [];
-    }
+    return snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, limit);
   }
 
+  // Category methods
   static async getCategories() {
     const categoriesSnapshot = await firestore()
       .collection('categories')
@@ -1613,7 +1604,7 @@ class FirebaseApi {
       const notificationData = {
         token: userData.fcmToken,
         title: 'Appointment Approved! ',
-        body: `Your appointment with ${businessData.name} on ${formattedDate} at ${formattedTime} has been approved.`,
+        body: `Your appointment with ${businessData.businessName} on ${formattedDate} at ${formattedTime} has been approved.`,
         data: {
           type: 'APPOINTMENT_APPROVED',
           appointmentId: appointment.id,
@@ -1675,10 +1666,11 @@ class FirebaseApi {
       .filter(doc => doc.exists && doc.data().status === 'available')
       .map(doc => {
         const data = doc.data();
+        const startTime = data.startTime.toDate();
         return {
           id: doc.id,
-          time: data.startTime.toDate(),
-          formattedTime: data.startTime.toDate().toLocaleTimeString('he-IL', {
+          time: startTime,
+          formattedTime: startTime.toLocaleTimeString('he-IL', {
             hour: '2-digit',
             minute: '2-digit',
             hour12: false
@@ -1849,7 +1841,7 @@ class FirebaseApi {
           .collection('users')
           .doc(customerId)
           .get();
-        
+
         if (!userDoc.exists) return null;
 
         const customerAppointments = appointmentsSnapshot.docs
@@ -2220,7 +2212,7 @@ class FirebaseApi {
       const db = firestore();
       const businessesRef = db.collection('businesses');
       const snapshot = await businessesRef.get();
-      
+
       // Convert to array with fullData flag
       let businesses = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -2252,38 +2244,6 @@ class FirebaseApi {
         );
       }
 
-      // Apply category filter if provided
-      if (filters?.categoryId) {
-        businesses = businesses.filter(business =>
-          business.categories?.includes(filters.categoryId)
-        );
-      }
-
-      // Apply distance filter if location is available
-      if (filters?.distance && filters?.userLocation) {
-        const { latitude: userLat, longitude: userLon } = filters.userLocation;
-        
-        businesses = businesses.filter(business => {
-          if (!business.location?.latitude || !business.location?.longitude) return false;
-          
-          // Calculate distance using Haversine formula
-          const R = 6371; // Earth's radius in kilometers
-          const lat1 = userLat * Math.PI / 180;
-          const lat2 = business.location.latitude * Math.PI / 180;
-          const dLat = (business.location.latitude - userLat) * Math.PI / 180;
-          const dLon = (business.location.longitude - userLon) * Math.PI / 180;
-
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1) * Math.cos(lat2) *
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-          
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const distance = R * c; // Distance in kilometers
-
-          return distance <= filters.distance;
-        });
-      }
-
       // Sort by rating (highest first)
       businesses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
 
@@ -2291,362 +2251,6 @@ class FirebaseApi {
     } catch (error) {
       console.error('Error searching businesses:', error);
       return [];
-    }
-  }
-
-  static async getBusinessesWithFilters(filters) {
-    try {
-      console.log('Starting filter with:', filters);
-      
-      // Get all businesses first
-      const snapshot = await firestore().collection('businesses').get();
-      let businesses = [];
-
-      snapshot.forEach((doc) => {
-        const business = { id: doc.id, ...doc.data() };
-        businesses.push(business);
-      });
-
-      console.log(`Found ${businesses.length} total businesses before filtering`);
-
-      // Apply filters one by one
-      if (filters) {
-        // Calculate distances first if location filter is provided
-        if (filters.userLocation && filters.userLocation.latitude && filters.userLocation.longitude) {
-          businesses = businesses.map(business => {
-            if (!business.location || !business.location.latitude || !business.location.longitude) {
-              business.distance = Infinity;
-              return business;
-            }
-
-            const distance = this.calculateDistance(
-              filters.userLocation.latitude,
-              filters.userLocation.longitude,
-              business.location.latitude,
-              business.location.longitude
-            );
-
-            business.distance = distance;
-            return business;
-          });
-
-          // Log some distance information for debugging
-          const sampleBusinesses = businesses.slice(0, 3);
-          console.log('Sample business distances:', sampleBusinesses.map(b => ({
-            name: b.name,
-            location: b.location,
-            distance: b.distance?.toFixed(2) + ' km'
-          })));
-        }
-
-        // Filter by distance if provided
-        if (filters.distance && filters.userLocation) {
-          const maxDistance = filters.distance; // distance should be in km
-          businesses = businesses.filter(business => {
-            const isInRange = business.distance <= maxDistance;
-            if (!isInRange) {
-              console.log(`Business ${business.name} excluded: distance ${business.distance?.toFixed(2)}km > ${maxDistance}km`);
-            }
-            return isInRange;
-          });
-          console.log(`After distance filter (<=${maxDistance}km): ${businesses.length} businesses`);
-        }
-
-        // Filter by category if provided
-        if (filters.categoryId) {
-          businesses = businesses.filter(business => {
-            const hasCategory = business.categories?.includes(filters.categoryId);
-            if (!hasCategory) {
-              console.log(`Business ${business.name} excluded: category ${filters.categoryId} not found in`, business.categories);
-            }
-            return hasCategory;
-          });
-          console.log(`After category filter (${filters.categoryId}): ${businesses.length} businesses`);
-        }
-
-        // Filter by rating if provided
-        if (filters.rating) {
-          businesses = businesses.filter(business => {
-            const businessRating = business.rating || 0;
-            const meetsRating = businessRating >= filters.rating;
-            if (!meetsRating) {
-              console.log(`Business ${business.name} excluded: rating ${businessRating} < ${filters.rating}`);
-            }
-            return meetsRating;
-          });
-          console.log(`After rating filter (>=${filters.rating}): ${businesses.length} businesses`);
-        }
-
-        // Filter by price if provided
-        if (filters.maxPrice) {
-          businesses = businesses.filter(business => {
-            const businessPrice = business.price || 0;
-            const meetsPrice = businessPrice <= filters.maxPrice;
-            if (!meetsPrice) {
-              console.log(`Business ${business.name} excluded: price ${businessPrice} > ${filters.maxPrice}`);
-            }
-            return meetsPrice;
-          });
-          console.log(`After price filter (<=${filters.maxPrice}): ${businesses.length} businesses`);
-        }
-
-        // Sort by distance if we have calculated distances
-        if (filters.userLocation) {
-          businesses.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
-          console.log('First 3 businesses after sorting by distance:', 
-            businesses.slice(0, 3).map(b => ({
-              name: b.name,
-              distance: b.distance?.toFixed(2) + ' km'
-            }))
-          );
-        }
-      }
-
-      return businesses;
-    } catch (error) {
-      console.error('Error getting businesses with filters:', error);
-      throw error;
-    }
-  }
-
-  static calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the earth in km
-    const dLat = this.deg2rad(lat2 - lat1);
-    const dLon = this.deg2rad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in kilometers
-  }
-
-  static deg2rad(deg) {
-    return deg * (Math.PI / 180);
-  }
-
-  // Add Israel boundaries and regions
-  static ISRAEL_REGIONS = {
-    central: {
-      // Dan Metropolitan area (Tel Aviv, Ramat Gan, Givatayim, etc.)
-      north: 32.15,
-      south: 31.95,
-      west: 34.72, // Adjusted to avoid sea
-      east: 34.85,
-      weight: 0.6  // 60% chance to be in central region
-    },
-    north: {
-      // Northern Israel (Haifa, Nazareth, etc.)
-      north: 33.25,
-      south: 32.15,
-      west: 34.90, // Adjusted to avoid sea
-      east: 35.60,
-      weight: 0.2  // 20% chance
-    },
-    south: {
-      // Southern Israel (Beer Sheva, Eilat, etc.)
-      north: 31.95,
-      south: 29.50,
-      west: 34.80, // Adjusted to avoid sea
-      east: 35.20,
-      weight: 0.2  // 20% chance
-    }
-  };
-
-  static isLocationInIsrael(location) {
-    // Check if location is in any of the defined regions
-    for (const region of Object.values(this.ISRAEL_REGIONS)) {
-      if (location.latitude <= region.north &&
-          location.latitude >= region.south &&
-          location.longitude >= region.west &&
-          location.longitude <= region.east) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static getRandomLocationInIsrael() {
-    // Determine which region to use based on weights
-    const rand = Math.random();
-    let selectedRegion;
-    
-    if (rand < this.ISRAEL_REGIONS.central.weight) {
-      selectedRegion = this.ISRAEL_REGIONS.central;
-      console.log('Selected central region for new location');
-    } else if (rand < this.ISRAEL_REGIONS.central.weight + this.ISRAEL_REGIONS.north.weight) {
-      selectedRegion = this.ISRAEL_REGIONS.north;
-      console.log('Selected northern region for new location');
-    } else {
-      selectedRegion = this.ISRAEL_REGIONS.south;
-      console.log('Selected southern region for new location');
-    }
-
-    let location;
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    do {
-      const lat = Math.random() * (selectedRegion.north - selectedRegion.south) + selectedRegion.south;
-      const lon = Math.random() * (selectedRegion.east - selectedRegion.west) + selectedRegion.west;
-      location = { latitude: lat, longitude: lon };
-      attempts++;
-
-      // If we can't find a valid location after maxAttempts, use the region center
-      if (attempts >= maxAttempts) {
-        location = {
-          latitude: (selectedRegion.north + selectedRegion.south) / 2,
-          longitude: (selectedRegion.east + selectedRegion.west) / 2
-        };
-        break;
-      }
-    } while (!this.isLocationInIsrael(location));
-    
-    return location;
-  }
-
-  static async updateBusinessesWithoutLocation() {
-    try {
-      // Request location permissions for reverse geocoding
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.error('Location permission denied');
-        return;
-      }
-
-      // Create backup first
-      console.log('Creating backup before updates...');
-      const backup = await this.backupBusinesses();
-      console.log(`Backup created: ${backup.backupCollection}`);
-
-      const db = firestore();
-      const businessesRef = db.collection('businesses');
-      const snapshot = await businessesRef.get();
-      
-      let updatedCount = 0;
-      let skippedCount = 0;
-      let centralCount = 0;
-      let northCount = 0;
-      let southCount = 0;
-      
-      console.log(`Found ${snapshot.size} total businesses`);
-      
-      for (const doc of snapshot.docs) {
-        const business = doc.data();
-        let location = business.location;
-        
-        // If no location exists, generate a random one
-        if (!location?.latitude || !location?.longitude) {
-          location = this.getRandomLocationInIsrael();
-          console.log(`Generated new location for business ${doc.id}`);
-        } else {
-          console.log(`Using existing location for business ${doc.id}`);
-        }
-        
-        // Track region distribution
-        if (location.latitude <= this.ISRAEL_REGIONS.central.north && 
-            location.latitude >= this.ISRAEL_REGIONS.central.south &&
-            location.longitude >= this.ISRAEL_REGIONS.central.west &&
-            location.longitude <= this.ISRAEL_REGIONS.central.east) {
-          centralCount++;
-        } else if (location.latitude > this.ISRAEL_REGIONS.central.north) {
-          northCount++;
-        } else {
-          southCount++;
-        }
-        
-        try {
-          // Get address using reverse geocoding
-          const [addressInfo] = await Location.reverseGeocodeAsync({
-            latitude: location.latitude,
-            longitude: location.longitude
-          }, {
-            language: "he"
-          });
-
-          // Format the address in Hebrew
-          const formattedAddress = [
-            addressInfo.street,
-            addressInfo.streetNumber,
-            addressInfo.city,
-            addressInfo.region,
-            "ישראל"
-          ].filter(Boolean).join(', ');
-
-          // Update the business document with location and address
-          await businessesRef.doc(doc.id).update({
-            location: location,
-            address: formattedAddress || `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`
-          });
-
-          console.log(`Updated business ${doc.id} with location:`, location, 'address:', formattedAddress);
-          
-          updatedCount++;
-        } catch (error) {
-          console.error(`Error updating business ${doc.id}:`, error);
-        }
-
-        // Add a small delay to avoid hitting rate limits
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-
-      const result = {
-        total: snapshot.size,
-        updated: updatedCount,
-        skipped: skippedCount,
-        failed: snapshot.size - updatedCount - skippedCount,
-        distribution: {
-          central: centralCount,
-          north: northCount,
-          south: southCount
-        }
-      };
-
-      console.log(`Update complete:
-        - Total businesses: ${snapshot.size}
-        - Updated: ${updatedCount}
-        - Skipped (already had location): ${skippedCount}
-        - Failed: ${snapshot.size - updatedCount - skippedCount}
-        
-        Location distribution of updated businesses:
-        - Central Israel: ${centralCount} (${updatedCount ? ((centralCount/updatedCount)*100).toFixed(1) : 0}%)
-        - Northern Israel: ${northCount} (${updatedCount ? ((northCount/updatedCount)*100).toFixed(1) : 0}%)
-        - Southern Israel: ${southCount} (${updatedCount ? ((southCount/updatedCount)*100).toFixed(1) : 0}%)
-      `);
-
-      return result;
-    } catch (error) {
-      console.error('Error updating businesses:', error);
-      throw error;
-    }
-  }
-
-  static async backupBusinesses() {
-    try {
-      const db = firestore();
-      const businessesRef = db.collection('businesses');
-      const snapshot = await businessesRef.get();
-      
-      // Create backup collection with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupRef = db.collection(`businesses_backup_${timestamp}`);
-      
-      console.log(`Creating backup: businesses_backup_${timestamp}`);
-      
-      let backupCount = 0;
-      for (const doc of snapshot.docs) {
-        await backupRef.doc(doc.id).set(doc.data());
-        backupCount++;
-      }
-      
-      console.log(`Backup complete: ${backupCount} businesses backed up`);
-      return {
-        backupCollection: `businesses_backup_${timestamp}`,
-        count: backupCount
-      };
-    } catch (error) {
-      console.error('Error creating backup:', error);
-      throw error;
     }
   }
 }
