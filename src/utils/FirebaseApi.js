@@ -1841,7 +1841,7 @@ class FirebaseApi {
           .collection('users')
           .doc(customerId)
           .get();
-
+        
         if (!userDoc.exists) return null;
 
         const customerAppointments = appointmentsSnapshot.docs
@@ -2194,12 +2194,32 @@ class FirebaseApi {
         .collection('businesses')
         .get();
 
-      const businesses = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      console.log('All businesses:', businesses);
-      console.log('First business data structure:', businesses[0]);
+      const businesses = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Handle the location field which is a GeoPoint in Firestore
+        const location = data.location ? {
+          latitude: data.location.latitude,
+          longitude: data.location.longitude
+        } : null;
+
+        // Log categories array for debugging
+        console.log(`Business ${data.name} categories:`, data.categories);
+
+        return {
+          id: doc.id,
+          ...data,
+          location, // Override the GeoPoint with our parsed location
+          categories: data.categories // Add categories to the log
+        };
+      });
+      
+      console.log('All businesses with parsed locations:', businesses.map(b => ({
+        id: b.id,
+        name: b.name,
+        location: b.location,
+        categories: b.categories
+      })));
+      
       return businesses;
     } catch (error) {
       console.error('Error getting all businesses:', error);

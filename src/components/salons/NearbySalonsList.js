@@ -5,6 +5,7 @@ import SalonCard from './SalonCard';
 import FirebaseApi from '../../utils/FirebaseApi';
 import * as Location from 'expo-location';
 import { getDistance } from 'geolib';
+import { DEFAULT_LOCATION, isLocationInIsrael } from '../../constants/locations';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -13,7 +14,12 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
   const [displaySalons, setDisplaySalons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [currentFilters, setCurrentFilters] = useState(null);
+  const [currentFilters, setCurrentFilters] = useState({
+    distance: 50, // Default 50km radius
+    rating: 1,
+    maxPrice: 1000,
+    availability: false
+  });
 
   // Expose methods to parent through ref
   useImperativeHandle(ref, () => ({
@@ -103,76 +109,91 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
       }
       console.log('✅ Location permission granted');
 
+      // 2. Get current location
       console.log('2. Getting current location...');
-      const currentLocation = await Location.getCurrentPositionAsync({});
-      console.log('📍 Current location:', {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        accuracy: currentLocation.coords.accuracy,
-        timestamp: new Date(currentLocation.timestamp).toLocaleString()
-      });
-
-      // 2. Get haircut category ID
-      console.log('3. Fetching haircut category...');
-      const category = await FirebaseApi.getHaircutCategory();
-      if (!category) {
-        console.log('❌ No haircut category found');
-        setLoading(false);
-        return;
+      const locationResult = await Location.getCurrentPositionAsync({});
+      
+      // 3. Check if location is in Israel
+      let currentLocation;
+      if (isLocationInIsrael(locationResult.coords.latitude, locationResult.coords.longitude)) {
+        currentLocation = {
+          latitude: locationResult.coords.latitude,
+          longitude: locationResult.coords.longitude
+        };
+        console.log('📍 Using device location:', currentLocation);
+      } else {
+        currentLocation = DEFAULT_LOCATION;
+        console.log('📍 Location outside Israel, using default location (Azrieli Mall Tel Aviv):', currentLocation);
       }
 
-      console.log('✅ Found category:', category);
-      const categoryId = category.categoryId;
-      console.log('🏷️ Using categoryId:', categoryId);
-
-      // 3. Get businesses with this category
-      console.log('4. Fetching businesses...');
-      const businesses = await FirebaseApi.getBusinessesByCategory(categoryId);
-      console.log(`📋 Found ${businesses.length} businesses`);
-      console.log('Business details:');
+      // 4. Fetch all businesses
+      console.log('3. Fetching all businesses...');
+      const businesses = await FirebaseApi.getAllBusinesses();
+      console.log(`✅ Fetched ${businesses.length} businesses`);
+      
+      // Log business details
       businesses.forEach((business, index) => {
         console.log(`Business ${index + 1}:`, {
           id: business.id,
           name: business.name,
-          hasLocation: !!business.location,
-          coordinates: business.location ? {
-            lat: business.location.latitude,
-            lng: business.location.longitude
-          } : 'No location data'
+          categoryId: business.categoryId,
+          hasLocation: business.location ? 'yes' : 'no',
+          location: business.location
         });
       });
 
-      // 4. Calculate distances and map business data
-      console.log('5. Calculating distances...');
-      const businessesWithDistance = businesses.map(business => {
-        let distance = null;
-
-        if (business.location?.latitude && business.location?.longitude) {
-          distance = getDistance(
-            { 
-              latitude: currentLocation.coords.latitude, 
-              longitude: currentLocation.coords.longitude 
-            },
-            {
-              latitude: business.location.latitude,
-              longitude: business.location.longitude
-            }
-          ) / 1000; // Convert to kilometers
-        }
-
-        return {
-          ...business,
-          distance
-        };
+      // 5. Calculate distances and sort by distance
+      console.log('4. Calculating distances from reference point:', {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude
       });
+      
+      const salonsWithDistance = businesses
+        .filter(business => business.location !== null) // Only include businesses with location
+        .map(business => {
+          const distance = getDistance(
+            { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+            { latitude: business.location.latitude, longitude: business.location.longitude }
+          ) / 1000; // Convert to kilometers
 
-      // 5. Sort by distance and filter out businesses without location
-      const sortedBusinesses = businessesWithDistance
-        .filter(business => business.distance !== null)
+          console.log(`Business ${business.name}: Distance = ${distance}km from reference point`);
+          return { ...business, distance };
+        })
         .sort((a, b) => a.distance - b.distance);
 
-      setAllSalons(sortedBusinesses);
-      setDisplaySalons(sortedBusinesses.slice(0, 10));
+      console.log('✅ Distance calculation complete');
+      console.log(`Found ${salonsWithDistance.length} businesses with valid locations`);
+
+      // 6. Get haircut category ID
+      console.log('5. Fetching haircut category...');
+      const category = await FirebaseApi.getHaircutCategory();
+      if (!category) {
+        console.log('❌ No haircut category found');
+        setErrorMsg('Category not found');
+        setLoading(false);
+        return;
+      }
+      const categoryId = category.categoryId;
+      console.log('🏷️ Using categoryId:', categoryId);
+
+      // 7. Filter businesses by category and distance
+      const businessesInCategory = salonsWithDistance.filter(business => {
+        const hasCategory = business.categories && business.categories.includes(categoryId);
+        console.log(`Business ${business.name}: categories=${JSON.stringify(business.categories)}, hasCategory=${hasCategory}`);
+        return hasCategory;
+      });
+      console.log(`Found ${businessesInCategory.length} businesses in category ${categoryId}`);
+
+      const filteredBusinesses = businessesInCategory.filter(business => {
+        const withinDistance = business.distance <= currentFilters.distance;
+        console.log(`Business ${business.name}: distance=${business.distance}km, withinRange=${withinDistance}`);
+        return withinDistance;
+      });
+
+      console.log(`Final results: ${filteredBusinesses.length} businesses within ${currentFilters.distance}km in category ${categoryId}`);
+      
+      setAllSalons(filteredBusinesses);
+      setDisplaySalons(filteredBusinesses.slice(0, 10));
       setLoading(false);
     } catch (error) {
       console.error('Error fetching nearby salons:', error);
