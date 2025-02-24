@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { FontFamily, Color } from "../../styles/GlobalStyles";
+import CustomMarker from '../map/CustomMarker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -13,42 +14,109 @@ const LocationPicker = ({ onLocationSelected }) => {
   const [mapRegion, setMapRegion] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Add default Azrieli mall location
+  const DEFAULT_LOCATION = {
+    latitude: 32.0745963,
+    longitude: 34.7918675,
+    latitudeDelta: 0.0922,
+    longitudeDelta: 0.0421,
+  };
+
+  // Add Israel boundaries
+  const ISRAEL_BOUNDS = {
+    north: 33.33,    // Northern boundary
+    south: 29.49,    // Southern boundary
+    west: 34.23,     // Western boundary
+    east: 35.90      // Eastern boundary
+  };
+
+  const isLocationInIsrael = (coords) => {
+    return coords.latitude >= ISRAEL_BOUNDS.south &&
+           coords.latitude <= ISRAEL_BOUNDS.north &&
+           coords.longitude >= ISRAEL_BOUNDS.west &&
+           coords.longitude <= ISRAEL_BOUNDS.east;
+  };
+
+  // Hebrew map style
+  const customMapStyle = [
+    {
+      "elementType": "labels",
+      "stylers": [
+        {
+          "language": "he"
+        }
+      ]
+    }
+  ];
+
   useEffect(() => {
     (async () => {
       try {
+        setLoading(true);
         // Request location permissions
         const { status } = await Location.requestForegroundPermissionsAsync();
         
         if (status !== 'granted') {
-          console.log('Location permission denied');
-          // Set default location (Tel Aviv) if permission denied
-          setMapRegion({
-            latitude: 32.0853,
-            longitude: 34.7818,
-            latitudeDelta: 0.0922,
-            longitudeDelta: 0.0421,
-          });
+          console.log('Location permission denied, using default Azrieli mall location');
+          setMapRegion(DEFAULT_LOCATION);
+          setSelectedLocation(DEFAULT_LOCATION);
           return;
         }
 
         // Get current location if permission granted
         const location = await Location.getCurrentPositionAsync({});
-        setMapRegion({
+        console.log('Retrieved location:', {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          accuracy: location.coords.accuracy,
+          timestamp: new Date(location.timestamp).toLocaleString()
+        });
+
+        // Check if location is in Israel
+        if (!isLocationInIsrael(location.coords)) {
+          console.log('Location outside Israel, using default Azrieli mall location');
+          setMapRegion(DEFAULT_LOCATION);
+          setSelectedLocation(DEFAULT_LOCATION);
+          return;
+        }
+
+        const currentRegion = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
-        });
-        
+        };
+
+        setMapRegion(currentRegion);
+        setSelectedLocation(currentRegion);
+
+        // Get address for the location
+        try {
+          const [address] = await Location.reverseGeocodeAsync({
+            latitude: currentRegion.latitude,
+            longitude: currentRegion.longitude
+          });
+          
+          if (address) {
+            const formattedAddress = [
+              address.street,
+              address.city,
+              address.region,
+              address.country
+            ].filter(Boolean).join(', ');
+            
+            setAddress(formattedAddress);
+            console.log('Current address:', formattedAddress);
+          }
+        } catch (error) {
+          console.error('Error getting address:', error);
+        }
       } catch (error) {
         console.error('Error getting location:', error);
-        // Set default location (Tel Aviv) on error
-        setMapRegion({
-          latitude: 32.0853,
-          longitude: 34.7818,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        });
+        setMapRegion(DEFAULT_LOCATION);
+        setSelectedLocation(DEFAULT_LOCATION);
+      } finally {
+        setLoading(false);
       }
     })();
   }, []);
@@ -154,7 +222,7 @@ const LocationPicker = ({ onLocationSelected }) => {
     }
   };
 
-  const selectLocation = async (location) => {
+  const handleSelectLocation = async (location) => {
     try {
       setSelectedLocation(location);
       setMapRegion({
@@ -202,8 +270,24 @@ const LocationPicker = ({ onLocationSelected }) => {
     ].filter(Boolean).join(', ');
   };
 
+  // Update map region and marker when location is selected
   const onMapPress = (e) => {
-    selectLocation(e.nativeEvent.coordinate);
+    const coords = e.nativeEvent.coordinate;
+    
+    if (!isLocationInIsrael(coords)) {
+      alert('אנא בחר מיקום בתוך גבולות ישראל');
+      return;
+    }
+
+    const newRegion = {
+      ...coords,
+      latitudeDelta: 0.0922,
+      longitudeDelta: 0.0421,
+    };
+
+    setMapRegion(newRegion);
+    setSelectedLocation(coords);
+    onLocationSelected(coords);
   };
 
   return (
@@ -211,16 +295,15 @@ const LocationPicker = ({ onLocationSelected }) => {
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.input}
-          placeholder="הזן כתובת"
+          placeholder="הזן כתובת (לדוגמה: דיזנגוף 50, תל אביב)"
           value={address}
           onChangeText={searchAddress}
-          textAlign="right"
+          placeholderTextColor={Color.grayscaleColorGray}
         />
         {loading && (
           <ActivityIndicator 
             style={styles.loadingIndicator} 
-            size="small" 
-            color={Color.primaryColorAmaranthPurple} 
+            color={Color.primaryColorAmaranthPurple}
           />
         )}
       </View>
@@ -231,11 +314,9 @@ const LocationPicker = ({ onLocationSelected }) => {
             <TouchableOpacity
               key={index}
               style={styles.resultItem}
-              onPress={() => selectLocation(result)}
+              onPress={() => handleSelectLocation(result)}
             >
-              <Text style={styles.resultText}>
-                {result.formattedAddress}
-              </Text>
+              <Text style={styles.resultText}>{result.formattedAddress}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -243,9 +324,15 @@ const LocationPicker = ({ onLocationSelected }) => {
 
       {mapRegion && (
         <MapView
+          provider={PROVIDER_GOOGLE}
           style={styles.map}
           region={mapRegion}
-          onPress={onMapPress}
+          customMapStyle={customMapStyle}
+          zoomEnabled={true}
+          scrollEnabled={true}
+          showsScale={true}
+          minZoomLevel={6}  // Minimum zoom level to show all of Israel
+          maxZoomLevel={20} // Maximum zoom level for street detail
         >
           {selectedLocation && (
             <Marker
@@ -253,14 +340,12 @@ const LocationPicker = ({ onLocationSelected }) => {
                 latitude: selectedLocation.latitude,
                 longitude: selectedLocation.longitude
               }}
-            />
+            >
+              <CustomMarker title={address || "המיקום שלך"} />
+            </Marker>
           )}
         </MapView>
       )}
-
-      <Text style={styles.helpText}>
-        חפש כתובת או לחץ על המפה לבחירת מיקום מדויק
-      </Text>
     </View>
   );
 };
@@ -276,15 +361,15 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    height: 45,
+    backgroundColor: Color.grayscaleColorWhite,
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    fontFamily: FontFamily["Assistant-Regular"],
-    color: '#1e293b',
+    paddingHorizontal: 15,
+    fontFamily: FontFamily.primaryFontRegular,
+    textAlign: 'right',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    height: 48,
+    borderColor: Color.grayscaleColorLightGray,
+    color: Color.grayscaleColorDarkGray,
   },
   loadingIndicator: {
     position: 'absolute',
@@ -318,11 +403,29 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     textAlign: 'right',
   },
+  mapContainer: {
+    width: '100%',
+    height: 300,
+    marginVertical: 10,
+  },
   map: {
     width: '100%',
-    height: 200,
-    borderRadius: 8,
-    marginTop: 8,
+    height: '100%',
+  },
+  addressOverlay: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 10,
+    borderRadius: 5,
+  },
+  addressText: {
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    color: Color.primaryColorAmaranthPurple,
+    textAlign: 'center',
   },
 });
 

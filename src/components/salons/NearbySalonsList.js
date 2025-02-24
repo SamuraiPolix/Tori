@@ -55,12 +55,6 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
         return false;
       }
 
-      // Rating filter
-      if (salon.rating < filters.rating) {
-        console.log(`Salon ${salon.name} filtered out by rating: ${salon.rating} < ${filters.rating}`);
-        return false;
-      }
-
       // Price filter (using average price of services)
       const avgPrice = salon.services?.reduce((sum, service) => sum + (service.price || 0), 0) / (salon.services?.length || 1);
       if (avgPrice > filters.maxPrice) {
@@ -95,16 +89,25 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
       // 1. Get location permission and current location
       console.log('1. Requesting location permission...');
       let { status } = await Location.requestForegroundPermissionsAsync();
+      
+      // Default to Azrieli Mall location if permission denied
+      let currentLocation;
       if (status !== 'granted') {
-        console.log('❌ Location permission denied');
-        setErrorMsg('Permission to access location was denied');
-        setLoading(false);
-        return;
+        console.log('❌ Location permission denied, using Azrieli Mall location');
+        currentLocation = {
+          coords: {
+            latitude: 32.0745963,
+            longitude: 34.7918675,
+            accuracy: 0
+          },
+          timestamp: Date.now()
+        };
+      } else {
+        console.log('✅ Location permission granted');
+        console.log('2. Getting current location...');
+        currentLocation = await Location.getCurrentPositionAsync({});
       }
-      console.log('✅ Location permission granted');
-
-      console.log('2. Getting current location...');
-      const currentLocation = await Location.getCurrentPositionAsync({});
+      
       console.log('📍 Current location:', {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
@@ -112,25 +115,18 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
         timestamp: new Date(currentLocation.timestamp).toLocaleString()
       });
 
-      // 2. Get haircut category ID
-      console.log('3. Fetching haircut category...');
-      const category = await FirebaseApi.getHaircutCategory();
-      if (!category) {
-        console.log('❌ No haircut category found');
-        setLoading(false);
-        return;
-      }
-
-      console.log('✅ Found category:', category);
-      const categoryId = category.categoryId;
-      console.log('🏷️ Using categoryId:', categoryId);
-
-      // 3. Get businesses with this category
-      console.log('4. Fetching businesses...');
-      const businesses = await FirebaseApi.getBusinessesByCategory(categoryId);
-      console.log(`📋 Found ${businesses.length} businesses`);
+      // 2. Get businesses with haircut category (ID: 1)
+      console.log('3. Fetching businesses...');
+      const businesses = await FirebaseApi.getBusinessesByCategory(1);
+      
+      // Apply rating filter in memory if needed
+      const filteredBusinesses = currentFilters?.rating 
+        ? businesses.filter(b => (b.rating || 0) >= currentFilters.rating)
+        : businesses;
+        
+      console.log(`📋 Found ${filteredBusinesses.length} businesses after filtering`);
       console.log('Business details:');
-      businesses.forEach((business, index) => {
+      filteredBusinesses.forEach((business, index) => {
         console.log(`Business ${index + 1}:`, {
           id: business.id,
           name: business.name,
@@ -142,9 +138,9 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
         });
       });
 
-      // 4. Calculate distances and map business data
-      console.log('5. Calculating distances...');
-      const businessesWithDistance = businesses.map(business => {
+      // 3. Calculate distances and map business data
+      console.log('4. Calculating distances...');
+      const businessesWithDistance = filteredBusinesses.map(business => {
         let distance = null;
 
         if (business.location?.latitude && business.location?.longitude) {
@@ -166,10 +162,16 @@ const NearbySalonsList = forwardRef(({ onSalonPress, navigation }, ref) => {
         };
       });
 
-      // 5. Sort by distance and filter out businesses without location
+      // 4. Sort by distance and filter out businesses without location
       const sortedBusinesses = businessesWithDistance
         .filter(business => business.distance !== null)
         .sort((a, b) => a.distance - b.distance);
+
+      console.log('5. Final sorted businesses:', sortedBusinesses.map(b => ({
+        name: b.name,
+        distance: b.distance,
+        location: b.location
+      })));
 
       setAllSalons(sortedBusinesses);
       setDisplaySalons(sortedBusinesses.slice(0, 10));
