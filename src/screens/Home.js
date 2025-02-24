@@ -18,6 +18,8 @@ import { Image } from "expo-image";
 import { FontFamily, Color } from "../styles/GlobalStyles";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from 'expo-location';
+import { DEFAULT_LOCATION, isLocationInIsrael } from '../constants/locations';
+import { Alert } from 'react-native';
 
 // Import Components
 import CategoriesList from '../components/categories/CategoriesList';
@@ -27,12 +29,9 @@ import NearbySalonsList from '../components/salons/NearbySalonsList';
 import BottomNavigation from '../components/common/BottomNavigation';
 import SalonDetails from '../components/salons/SalonDetails';
 import FilterModal from '../components/filters/FilterModal';
-import BusinessMapModal from '../components/map/BusinessMapModal';
-import { Alert } from 'react-native';
 
 // Import Data
 import { NEARBY_SALONS, SALONS } from '../components/salons/salonsData';
-import { CATEGORIES } from '../components/categories/categoriesData';
 
 // Import Firebase API and user storage
 import { getUserData, storeUserData } from "../utils/userStorage";
@@ -61,18 +60,16 @@ const HomeScreen = ({ navigation }) => {
   const [showFilters, setShowFilters] = React.useState(false);
   const [userName, setUserName] = React.useState('');
   const [refreshing, setRefreshing] = React.useState(false);
-  const [showMap, setShowMap] = React.useState(false);
-  const [businesses, setBusinesses] = React.useState([]);
   const [filters, setFilters] = React.useState({
     distance: 30,
     rating: 3,
     maxPrice: 200,
     availability: false,
     selectedDay: undefined,
-    categoryId: undefined,
-    userLocation: null
+    categoryId: undefined
   });
   const [filteredSalons, setFilteredSalons] = React.useState([]);
+  const [userLocation, setUserLocation] = React.useState(null);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -118,97 +115,53 @@ const HomeScreen = ({ navigation }) => {
     loadUserName();
   }, []);
 
-  // Set default location (Azrieli mall) if permission denied or error occurs
-  const DEFAULT_LOCATION = {
-    latitude: 32.0745963,
-    longitude: 34.7918675
-  };
-
-  // Add Israel boundaries
-  const ISRAEL_BOUNDS = {
-    north: 33.33,    // Northern boundary
-    south: 29.49,    // Southern boundary
-    west: 34.23,     // Western boundary
-    east: 35.90      // Eastern boundary
-  };
-
-  const isLocationInIsrael = (location) => {
-    return location.latitude >= ISRAEL_BOUNDS.south &&
-           location.latitude <= ISRAEL_BOUNDS.north &&
-           location.longitude >= ISRAEL_BOUNDS.west &&
-           location.longitude <= ISRAEL_BOUNDS.east;
-  };
-
-  React.useEffect(() => {
-    const getUserLocation = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.log('Location permission denied, using default Azrieli mall location');
-          setFilters(prev => ({
-            ...prev,
-            userLocation: DEFAULT_LOCATION
-          }));
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({});
-        console.log('Retrieved location:', {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          accuracy: location.coords.accuracy,
-          timestamp: new Date(location.timestamp).toLocaleString()
-        });
-
-        // Check if location is in Israel
-        const userLocation = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude
-        };
-
-        if (!isLocationInIsrael(userLocation)) {
-          console.log('Location outside Israel, using default Azrieli mall location');
-          setFilters(prev => ({
-            ...prev,
-            userLocation: DEFAULT_LOCATION
-          }));
-          return;
-        }
-
-        setFilters(prev => ({
-          ...prev,
-          userLocation: userLocation
-        }));
-      } catch (error) {
-        console.error('Error getting location:', error);
-        console.log('Using default Azrieli mall location');
-        setFilters(prev => ({
-          ...prev,
-          userLocation: DEFAULT_LOCATION
-        }));
-      }
-    };
-
-    getUserLocation();
-  }, []);
-
-  React.useEffect(() => {
-    const loadBusinesses = async () => {
-      try {
-        const allBusinesses = await FirebaseApi.getAllBusinesses();
-        setBusinesses(allBusinesses);
-      } catch (error) {
-        console.error('Error loading businesses:', error);
-      }
-    };
-    loadBusinesses();
-  }, []);
-
   React.useEffect(() => {
     StatusBar.setBarStyle('light-content');
     if (Platform.OS === 'android') {
       StatusBar.setBackgroundColor(Color.primaryColorAmaranthPurple);
     }
+  }, []);
+
+  React.useEffect(() => {
+    const askForLocationPermission = async () => {
+      try {
+        console.log('1. Requesting location permission...');
+        // Add a small delay to ensure component is mounted
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        console.log('2. Permission status:', status);
+        
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          
+          // Check if location is in Israel
+          if (isLocationInIsrael(location.coords.latitude, location.coords.longitude)) {
+            console.log('📍 Using device location:', location.coords);
+            setUserLocation(location.coords);
+          } else {
+            console.log('📍 Location outside Israel, using default location (Azrieli Mall Tel Aviv):', DEFAULT_LOCATION);
+            setUserLocation(DEFAULT_LOCATION);
+          }
+        } else {
+          console.log('📍 Location permission denied, using default location:', DEFAULT_LOCATION);
+          setUserLocation(DEFAULT_LOCATION);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+        console.log('📍 Error getting location, using default location:', DEFAULT_LOCATION);
+        setUserLocation(DEFAULT_LOCATION);
+      }
+    };
+    
+    // Run the permission request after component mount
+    const timeoutId = setTimeout(() => {
+      askForLocationPermission();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const formatDistance = (min, max) => {
@@ -224,18 +177,14 @@ const HomeScreen = ({ navigation }) => {
   };
 
   // Navigation Handlers
-  const handleCategoryPress = async (categoryId) => {
+  const handleCategoryPress = async (category) => {
     try {
-      console.log('Selected category ID:', categoryId);
+      console.log('Selected category:', category);
+      const categoryId = category.categoryId || category.id;
       const businesses = await FirebaseApi.getBusinessesByCategory(categoryId);
       console.log(`Found ${businesses?.length || 0} businesses for category ${categoryId}`);
-      
-      // Get category title from CATEGORIES
-      const category = CATEGORIES.find(c => c.id === categoryId);
-      const title = category ? category.title : 'קטגוריה';
-      
       navigation.navigate('FullList', {
-        title: title,
+        title: category.title || category.name,
         data: businesses,
         type: 'salon'
       });
@@ -313,15 +262,79 @@ const HomeScreen = ({ navigation }) => {
 
   const handleApplyFilters = async (newFilters) => {
     console.log('Applying new filters:', newFilters);
+    setFilters(newFilters);
     
     try {
-      // Get businesses from Firebase with all filters
-      const businesses = await FirebaseApi.getBusinessesWithFilters({
-        ...newFilters,
-        userLocation: filters.userLocation // Add user location to filters
-      });
+      // Get filtered results from both lists
+      let allFilteredSalons = [];
       
-      console.log(`Found ${businesses?.length || 0} businesses after filtering`);
+      // Get businesses filtered by category if selected
+      const businesses = await FirebaseApi.getBusinessesByCategory(newFilters.categoryId);
+      console.log(`Found ${businesses?.length || 0} total businesses`);
+
+      if (businesses) {
+        const filteredBusinesses = businesses.filter(business => {
+          // Calculate distance
+          if (business.location && userLocation) {
+            const distance = getDistance(userLocation, business.location) / 1000; // Convert to km
+            business.distance = distance;
+            
+            // Distance filter
+            if (distance > newFilters.distance) {
+              console.log(`Business ${business.name} filtered out by distance: ${distance} > ${newFilters.distance}`);
+              return false;
+            }
+          }
+
+          // Rating filter
+          if (business.rating < newFilters.rating) {
+            console.log(`Business ${business.name} filtered out by rating: ${business.rating} < ${newFilters.rating}`);
+            return false;
+          }
+
+          // Price filter
+          console.log(`Checking price for ${business.name}:`);
+          console.log('Services:', business.services);
+          
+          if (business.services && business.services.length > 0) {
+            // Check if any service has price below or equal to the filter value
+            const hasServiceInPriceRange = business.services.some(service => {
+              console.log(`Service: ${service.name}, Price: ${service.price}`);
+              return service.price <= newFilters.maxPrice;
+            });
+            
+            if (!hasServiceInPriceRange) {
+              console.log(`Business ${business.name} filtered out by price: no services found under ${newFilters.maxPrice}₪`);
+              return false;
+            } else {
+              console.log(`Business ${business.name} has services under ${newFilters.maxPrice}₪`);
+            }
+          } else {
+            console.log('No services found');
+            return false;
+          }
+
+          // Availability filter
+          if (newFilters.availability && !business.isAvailableToday) {
+            console.log(`Business ${business.name} filtered out by availability`);
+            return false;
+          }
+
+          // Selected day filter
+          if (newFilters.selectedDay !== undefined) {
+            const hasAvailabilityForDay = business.availability?.[newFilters.selectedDay]?.some(slot => !slot.isBooked);
+            if (!hasAvailabilityForDay) {
+              console.log(`Business ${business.name} filtered out by selected day: ${newFilters.selectedDay}`);
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        console.log(`Found ${filteredBusinesses.length} businesses after filtering`);
+        allFilteredSalons = filteredBusinesses;
+      }
 
       // Close the filter modal
       setShowFilters(false);
@@ -329,7 +342,7 @@ const HomeScreen = ({ navigation }) => {
       // Navigate to the filtered results screen
       navigation.navigate('FullList', {
         title: 'תוצאות חיפוש',
-        data: businesses,
+        data: allFilteredSalons,
         type: 'salon',
         filters: newFilters
       });
@@ -398,23 +411,21 @@ const HomeScreen = ({ navigation }) => {
             />
           </View>
 
-          {/* Map Button */}
-          <TouchableOpacity 
-            style={styles.mapButton}
-            onPress={() => setShowMap(true)}
-          >
-            <View style={styles.mapButtonContent}>
-              <Ionicons name="map" size={24} color={Color.primaryColorAmaranthPurple} />
-              <Text style={styles.mapButtonText}>כל העסקים על המפה</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Business Map Modal */}
-          <BusinessMapModal
-            visible={showMap}
-            onClose={() => setShowMap(false)}
-            businesses={businesses}
-          />
+          {/* Map Button Section */}
+          <View style={styles.mapButtonSection}>
+            <TouchableOpacity 
+              style={styles.mapButton}
+              onPress={() => navigation.navigate('Map')}
+            >
+              <Ionicons 
+                name="map-outline" 
+                size={24} 
+                color={Color.primaryColorAmaranthPurple} 
+                style={styles.mapIcon}
+              />
+              <Text style={styles.mapButtonText}>הצג עסקים על המפה</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Top Rated Salons */}
           <SalonsList 
@@ -556,34 +567,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     textAlign: 'right',
   },
+  mapButtonSection: {
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
   mapButton: {
-    width: '85%',
-    alignSelf: 'center',
-    marginVertical: 15,
-    backgroundColor: Color.grayscaleColorWhite,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     borderRadius: 12,
-    elevation: 3,
+    borderWidth: 2,
+    borderColor: Color.primaryColorAmaranthPurple,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    borderWidth: 2,
-    borderColor: Color.secondaryColorLightBlue,
-  },
-  mapButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    width: '100%',
   },
   mapButtonText: {
-    marginRight: 10,
-    fontFamily: FontFamily.primaryFontBold,
     fontSize: 16,
+    fontFamily: FontFamily.assistantSemiBold,
     color: Color.primaryColorAmaranthPurple,
+    marginRight: 8,
+  },
+  mapIcon: {
+    marginLeft: 8,
   },
 });
 
