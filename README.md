@@ -1,8 +1,8 @@
 # Tori - Business Management and Appointments System
 ### [Project Demo Video](https://youtu.be/GYeKwG4_yJA?si=5IZWk-KVdEfRPLnd)
 
-![Project Thumbnail](screenshots/thumbnail.png)
-![Project Features](screenshots/features.png)
+<img src="screenshots/Thumbnail.png" alt="Thumbnail" width="800"/>
+<img src="screenshots/Features.png" alt="Features" width="800"/>
 
 ### Software Engineering Course Project
 B.Sc in Computer Science @ Ariel University
