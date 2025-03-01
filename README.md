@@ -1,6 +1,53 @@
 # Tori - Business Management and Appointments System
 
-A React Native application for managing business appointments, services, and customer relationships.
+[Project Thumbnail - Coming Soon]
+
+### Software Engineering Course Project
+B.Sc in Computer Science @ Ariel University
+
+## Authors
+- Samuel Lazareanu - [LinkedIn](https://www.linkedin.com/in/samuellazareanu) | [GitHub](https://github.com/SamuraiPolix)
+- Adiel Halevi - [LinkedIn](https://www.linkedin.com/in/adiel-halevi) | [GitHub](https://github.com/adiel098)
+- Roey Shmilovich - [LinkedIn](https://www.linkedin.com/in/roey-shmilo) | [GitHub](https://github.com/RoeYeoR)
+
+## About the Project
+Search for businesses and book appointments on the same app, all in one place.
+- Developed an advanced search feature for quick appointment booking
+- Led full-cycle development using industry best practices, from initiation to deployment
+- Integrated Firebase, Firestore, Storage
+- Designed UI/UX using Figma and managed project in a team of 3 using Trello
+
+## Table of Contents
+- [About](#about-the-project)
+- [Screenshots](#screenshots)
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Firebase Setup](#firebase-setup)
+- [Running the App](#running-the-app)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+
+## Screenshots
+### Customer Interface
+- Welcome Screen [Coming Soon]
+- Register/Login [Coming Soon]
+- Customer HomePage [Coming Soon]
+- Advanced Search Filters [Coming Soon]
+- Quick Appointment Page [Coming Soon]
+- My Appointments [Coming Soon]
+- Saved/Favorite Businesses [Coming Soon]
+- Business Page [Coming Soon]
+- Appointment in SalonDetails [Coming Soon]
+
+### Business Interface
+- Business Registration Steps [Coming Soon]
+- Business Dashboard [Coming Soon]
+- Business Calendar and Appointments Management [Coming Soon]
+- Business Settings [Coming Soon]
+- Stats Page [Coming Soon]
 
 ## System Requirements
 
@@ -9,7 +56,7 @@ A React Native application for managing business appointments, services, and cus
 - React Native development environment
 - Android Studio (for Android development)
 - Xcode (for iOS development, macOS only)
-- Firebase project setup
+- Firebase project setup (Auth, Firestore, Storage, Functions, Messaging)
 
 ## Installation
 
@@ -120,7 +167,6 @@ This allows you to test business and customer interactions in real-time.
 - 📊 Business Analytics
 - ⚙️ Business Settings
 - 🔔 Push Notifications
-- 📱 Mobile-First Design
 
 ## Project Structure
 
