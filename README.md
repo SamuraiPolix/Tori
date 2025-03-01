@@ -14,7 +14,7 @@ B.Sc in Computer Science @ Ariel University
 Search for businesses and book appointments on the same app, all in one place.
 - Developed an advanced search feature for quick appointment booking
 - Led full-cycle development using industry best practices, from initiation to deployment
-- Integrated Firebase, Firestore, Storage
+- Integrated Firebase, Firestore, Storage, Functions, Messaging
 - Designed UI/UX using Figma and managed project in a team of 3 using Trello
 
 ## Table of Contents
@@ -31,23 +31,42 @@ Search for businesses and book appointments on the same app, all in one place.
 - [Contributing](#contributing)
 
 ## Screenshots
-### Customer Interface
-- Welcome Screen [Coming Soon]
-- Register/Login [Coming Soon]
-- Customer HomePage [Coming Soon]
-- Advanced Search Filters [Coming Soon]
-- Quick Appointment Page [Coming Soon]
-- My Appointments [Coming Soon]
-- Saved/Favorite Businesses [Coming Soon]
-- Business Page [Coming Soon]
-- Appointment in SalonDetails [Coming Soon]
 
-### Business Interface
-- Business Registration Steps [Coming Soon]
-- Business Dashboard [Coming Soon]
-- Business Calendar and Appointments Management [Coming Soon]
-- Business Settings [Coming Soon]
-- Stats Page [Coming Soon]
+### Customer Flow
+Here's the flow of screens from the customer's perspective:
+(They are a bit changed in later versions, but the general idea is the same)
+
+<div align="center">
+  <img src="screenshots/customer/Customer2-1.png" alt="Customer Flow Part 1" width="800"/>
+  <img src="screenshots/customer/Customer2-2.png" alt="Customer Flow Part 2" width="800"/>
+</div>
+
+- Welcome Screen
+- Register/Login
+- Customer HomePage
+- Advanced Search Filters
+- Quick Appointment Page
+- My Appointments
+- Saved/Favorite Businesses
+- Business Page
+- Appointment in SalonDetails
+
+### Business Flow
+Here's the flow of screens from the business's perspective:
+
+<div align="center">
+  <img src="screenshots/business/Business2-1.png" alt="Business Flow Part 1" width="800"/>
+  <img src="screenshots/business/Business2-2.png" alt="Business Flow Part 2" width="800"/>
+  <img src="screenshots/business/Business2-3.png" alt="Business Flow Part 3" width="800"/>
+  <img src="screenshots/business/Business2-4.png" alt="Business Flow Part 4" width="800"/>
+  <img src="screenshots/business/Business2-5.png" alt="Business Flow Part 5" width="800"/>
+</div>
+
+- Business Registration Steps
+- Business Dashboard
+- Business Calendar and Appointments Management
+- Business Settings
+- Stats Page
 
 ## System Requirements
 
