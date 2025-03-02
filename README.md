@@ -1,5 +1,5 @@
 # Tori - Business Management and Appointments System
-### [Project Demo Video](https://youtu.be/GYeKwG4_yJA?si=5IZWk-KVdEfRPLnd)
+### [Full Project Demo (Video)](https://youtu.be/GYeKwG4_yJA?si=5IZWk-KVdEfRPLnd) | [Push Notifications Demo (Video)](https://youtu.be/pYbYmigJUpk)
 
 <img src="screenshots/Thumbnail.png" alt="Thumbnail" width="800"/>
 <img src="screenshots/Features.png" alt="Features" width="800"/>
