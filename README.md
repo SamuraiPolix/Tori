@@ -1,4 +1,4 @@
-# Tori - Business Management and Appointments System
+# Tori - Business Management and Appointments System.
 ### [Full App Demo (Video)](https://youtu.be/GYeKwG4_yJA?si=5IZWk-KVdEfRPLnd) | [Push Notifications Demo (Video)](https://youtu.be/pYbYmigJUpk)
 
 <img src="screenshots/Thumbnail.png" alt="Thumbnail" width="800"/>
